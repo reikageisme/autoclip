@@ -1,0 +1,36 @@
+{
+  "name": "Minimal",
+  "duration": 1500000,
+  "fps": 30,
+  "canvas_config": {
+    "width": 1080,
+    "height": 1920,
+    "ratio": "9:16"
+  },
+  "tracks": [
+    {
+      "id": "one-video",
+      "type": "video",
+      "segments": [
+        {
+          "id": "only",
+          "material_id": "only-media",
+          "target_timerange": {"start": 0, "duration": 1500000},
+          "source_timerange": {"start": 0, "duration": 1500000},
+          "speed": 1.0
+        }
+      ]
+    }
+  ],
+  "materials": {
+    "videos": [
+      {
+        "id": "only-media",
+        "path": "C:/media/only.mp4",
+        "duration": 1500000,
+        "width": 1080,
+        "height": 1920
+      }
+    ]
+  }
+}

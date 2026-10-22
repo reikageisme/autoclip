@@ -1,0 +1,165 @@
+{
+  "name": "Basic Hook",
+  "duration": 7000000,
+  "fps": 30,
+  "canvas_config": {
+    "width": 1080,
+    "height": 1920,
+    "ratio": "9:16"
+  },
+  "tracks": [
+    {
+      "id": "track-video",
+      "type": "video",
+      "segments": [
+        {
+          "id": "seg-v1",
+          "material_id": "m-v1",
+          "target_timerange": {"start": 0, "duration": 2000000},
+          "source_timerange": {"start": 0, "duration": 2000000},
+          "speed": 1.0,
+          "volume": 1.0,
+          "visible": true,
+          "extra_material_refs": ["eff-vignette", "eff-unknown"]
+        },
+        {
+          "id": "seg-v2",
+          "material_id": "m-v2",
+          "target_timerange": {"start": 2000000, "duration": 3000000},
+          "source_timerange": {"start": 500000, "duration": 3000000},
+          "speed": 1.0,
+          "volume": 0.8,
+          "visible": true,
+          "extra_material_refs": ["trans-zoom", "sticker-arrow"]
+        },
+        {
+          "id": "seg-v3",
+          "material_id": "m-v3",
+          "target_timerange": {"start": 5000000, "duration": 2000000},
+          "source_timerange": {"start": 0, "duration": 2000000},
+          "speed": 1.0,
+          "volume": 1.0,
+          "visible": true,
+          "extra_material_refs": ["trans-unknown"]
+        }
+      ]
+    },
+    {
+      "id": "track-text",
+      "type": "text",
+      "segments": [
+        {
+          "id": "seg-t1",
+          "material_id": "m-t1",
+          "target_timerange": {"start": 200000, "duration": 1800000},
+          "clip": {"transform": {"x": 0.0, "y": -0.7}}
+        },
+        {
+          "id": "seg-t2",
+          "material_id": "m-t2",
+          "target_timerange": {"start": 3500000, "duration": 2000000},
+          "clip": {"transform": {"x": 0.1, "y": 0.4}}
+        }
+      ]
+    },
+    {
+      "id": "track-audio",
+      "type": "audio",
+      "segments": [
+        {
+          "id": "seg-a1",
+          "material_id": "m-a1",
+          "target_timerange": {"start": 0, "duration": 7000000},
+          "source_timerange": {"start": 0, "duration": 7000000},
+          "volume": 0.35
+        }
+      ]
+    }
+  ],
+  "materials": {
+    "videos": [
+      {
+        "id": "m-v1",
+        "path": "C:/media/hook.mp4",
+        "duration": 2000000,
+        "width": 1080,
+        "height": 1920
+      },
+      {
+        "id": "m-v2",
+        "path": "C:/media/body.mp4",
+        "duration": 4000000,
+        "width": 1080,
+        "height": 1920
+      },
+      {
+        "id": "m-v3",
+        "path": "C:/media/outro.mp4",
+        "duration": 2000000,
+        "width": 1080,
+        "height": 1920
+      }
+    ],
+    "audios": [
+      {
+        "id": "m-a1",
+        "path": "C:/media/music.mp3",
+        "duration": 7000000,
+        "type": "music",
+        "name": "Upbeat Loop"
+      }
+    ],
+    "texts": [
+      {
+        "id": "m-t1",
+        "content": "{\"text\":\"WOW!\",\"styles\":[{\"font\":{\"path\":\"C:/fonts/Inter-Bold.ttf\",\"family\":\"Inter\"},\"size\":14.0,\"bold\":true,\"stroke\":{\"width\":0.08,\"color\":[0,0,0]},\"fill\":{\"content\":{\"solid\":{\"color\":[1,1,1]}}},\"alignment\":1}]}"
+      },
+      {
+        "id": "m-t2",
+        "content": "{\"text\":\"This is the story\",\"styles\":[{\"font\":{\"path\":\"C:/fonts/Roboto-Bold.ttf\",\"family\":\"Roboto\"},\"size\":8.0,\"bold\":true,\"fill\":{\"content\":{\"solid\":{\"color\":[1,0.83,0]}}},\"alignment\":1}]}"
+      }
+    ],
+    "effects": [
+      {
+        "id": "eff-vignette",
+        "name": "Vignette",
+        "effect_id": "capcut-vignette",
+        "resource_id": "res-vignette",
+        "value": 0.6
+      },
+      {
+        "id": "eff-unknown",
+        "name": "Hologram",
+        "effect_id": "capcut-hologram",
+        "resource_id": "res-hologram",
+        "value": 0.9
+      }
+    ],
+    "transitions": [
+      {
+        "id": "trans-zoom",
+        "name": "Zoom",
+        "duration": 500000,
+        "is_overlap": true,
+        "effect_id": "capcut-zoom",
+        "resource_id": "res-zoom"
+      },
+      {
+        "id": "trans-unknown",
+        "name": "Glitch Pro",
+        "duration": 400000,
+        "is_overlap": true,
+        "effect_id": "capcut-glitch-pro",
+        "resource_id": "res-glitch-pro"
+      }
+    ],
+    "stickers": [
+      {
+        "id": "sticker-arrow",
+        "name": "Arrow",
+        "resource_id": "res-arrow",
+        "category_name": "Shapes"
+      }
+    ]
+  }
+}

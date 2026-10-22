@@ -1,0 +1,119 @@
+{
+  "name": "Caption Story",
+  "duration": 5000000,
+  "fps": 25,
+  "canvas_config": {
+    "width": 1920,
+    "height": 1080,
+    "ratio": "16:9"
+  },
+  "tracks": [
+    {
+      "id": "track-main",
+      "type": "video",
+      "segments": [
+        {
+          "id": "cap-v1",
+          "material_id": "cap-m1",
+          "target_timerange": {"start": 0, "duration": 2500000},
+          "source_timerange": {"start": 0, "duration": 2500000},
+          "speed": 1.25,
+          "extra_material_refs": ["cap-fx"]
+        },
+        {
+          "id": "cap-v2",
+          "material_id": "cap-m2",
+          "target_timerange": {"start": 2500000, "duration": 2500000},
+          "source_timerange": {"start": 1000000, "duration": 2500000},
+          "speed": 1.0,
+          "extra_material_refs": ["cap-trans"]
+        }
+      ]
+    },
+    {
+      "id": "track-captions",
+      "type": "text",
+      "segments": [
+        {
+          "id": "cap-t1",
+          "material_id": "cap-txt1",
+          "target_timerange": {"start": 0, "duration": 800000},
+          "clip": {"transform": {"x": 0.0, "y": 0.35}}
+        },
+        {
+          "id": "cap-t2",
+          "material_id": "cap-txt2",
+          "target_timerange": {"start": 900000, "duration": 900000},
+          "clip": {"transform": {"x": 0.0, "y": 0.35}}
+        },
+        {
+          "id": "cap-t3",
+          "material_id": "cap-txt3",
+          "target_timerange": {"start": 1900000, "duration": 900000},
+          "clip": {"transform": {"x": 0.0, "y": 0.35}}
+        },
+        {
+          "id": "cap-t4",
+          "material_id": "cap-txt4",
+          "target_timerange": {"start": 2900000, "duration": 1000000},
+          "clip": {"transform": {"x": 0.0, "y": 0.35}}
+        }
+      ]
+    }
+  ],
+  "materials": {
+    "videos": [
+      {
+        "id": "cap-m1",
+        "path": "C:/media/cap-a.mp4",
+        "duration": 2500000,
+        "width": 1920,
+        "height": 1080
+      },
+      {
+        "id": "cap-m2",
+        "path": "C:/media/cap-b.mp4",
+        "duration": 4000000,
+        "width": 1920,
+        "height": 1080
+      }
+    ],
+    "texts": [
+      {
+        "id": "cap-txt1",
+        "content": "{\"text\":\"first\",\"styles\":[{\"font\":{\"family\":\"Hanken Grotesk\"},\"size\":7.0,\"bold\":false}]}"
+      },
+      {
+        "id": "cap-txt2",
+        "content": "{\"text\":\"second\",\"styles\":[{\"font\":{\"family\":\"Hanken Grotesk\"},\"size\":7.0,\"bold\":false}]}"
+      },
+      {
+        "id": "cap-txt3",
+        "content": "{\"text\":\"third\",\"styles\":[{\"font\":{\"family\":\"Hanken Grotesk\"},\"size\":7.0,\"bold\":false}]}"
+      },
+      {
+        "id": "cap-txt4",
+        "content": "{\"text\":\"fourth\",\"styles\":[{\"font\":{\"family\":\"Hanken Grotesk\"},\"size\":7.0,\"bold\":false}]}"
+      }
+    ],
+    "effects": [
+      {
+        "id": "cap-fx",
+        "name": "Film Grain",
+        "effect_id": "capcut-grain",
+        "resource_id": "res-grain",
+        "value": 0.4
+      }
+    ],
+    "transitions": [
+      {
+        "id": "cap-trans",
+        "name": "Dissolve",
+        "duration": 600000,
+        "is_overlap": true,
+        "effect_id": "capcut-dissolve",
+        "resource_id": "res-dissolve"
+      }
+    ]
+  }
+}
