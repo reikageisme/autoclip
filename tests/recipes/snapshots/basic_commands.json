@@ -1,0 +1,165 @@
+[
+  {
+    "tool": "project_set_video",
+    "args": {
+      "video": {
+        "width": 1080,
+        "height": 1920,
+        "rateNum": 30,
+        "rateDen": 1
+      },
+      "path": "D:/work/autoclip/data/tmp/basic"
+    }
+  },
+  {
+    "tool": "media_import",
+    "args": {
+      "file": "C:/media/hook.mp4",
+      "path": "D:/work/autoclip/data/tmp/basic"
+    }
+  },
+  {
+    "tool": "media_import",
+    "args": {
+      "file": "C:/media/body.mp4",
+      "path": "D:/work/autoclip/data/tmp/basic"
+    }
+  },
+  {
+    "tool": "media_import",
+    "args": {
+      "file": "C:/media/outro.mp4",
+      "path": "D:/work/autoclip/data/tmp/basic"
+    }
+  },
+  {
+    "tool": "clips_add_sequence",
+    "args": {
+      "mediaIds": [
+        "C:/media/hook.mp4",
+        "C:/media/body.mp4",
+        "C:/media/outro.mp4"
+      ],
+      "start": 0.0,
+      "path": "D:/work/autoclip/data/tmp/basic"
+    }
+  },
+  {
+    "tool": "clip_speed",
+    "args": {
+      "clipId": "2",
+      "speed": 1.3,
+      "path": "D:/work/autoclip/data/tmp/basic"
+    }
+  },
+  {
+    "tool": "clip_update",
+    "args": {
+      "clipId": "2",
+      "patch": {
+        "transitionIn": {
+          "id": "concat.zoom-transition",
+          "duration": 0.4
+        }
+      },
+      "path": "D:/work/autoclip/data/tmp/basic"
+    }
+  },
+  {
+    "tool": "keyframe_set",
+    "args": {
+      "clipId": "2",
+      "property": "scale",
+      "at": 0.0,
+      "value": 1.0,
+      "path": "D:/work/autoclip/data/tmp/basic"
+    }
+  },
+  {
+    "tool": "keyframe_set",
+    "args": {
+      "clipId": "2",
+      "property": "scale",
+      "at": 1.0,
+      "value": 1.08,
+      "path": "D:/work/autoclip/data/tmp/basic"
+    }
+  },
+  {
+    "tool": "clips_move",
+    "args": {
+      "moves": [
+        {
+          "clipId": "1",
+          "start": 0.0,
+          "trackId": ""
+        },
+        {
+          "clipId": "2",
+          "start": 2.0,
+          "trackId": ""
+        },
+        {
+          "clipId": "3",
+          "start": 5.077,
+          "trackId": ""
+        }
+      ],
+      "path": "D:/work/autoclip/data/tmp/basic"
+    }
+  },
+  {
+    "tool": "effect_layer_add",
+    "args": {
+      "effectId": "concat.vignette",
+      "start": 0.0,
+      "duration": 7.0,
+      "path": "D:/work/autoclip/data/tmp/basic"
+    }
+  },
+  {
+    "tool": "title_add",
+    "args": {
+      "start": 0.1,
+      "duration": 2.1,
+      "style": {
+        "fontWeight": 800,
+        "strokeWidth": 0.008,
+        "strokeColor": "#000000",
+        "fontFamily": "Inter",
+        "color": "#ffffff",
+        "content": "WOW!"
+      },
+      "offsetY": -0.3,
+      "above": true,
+      "path": "D:/work/autoclip/data/tmp/basic"
+    }
+  },
+  {
+    "tool": "captions_add",
+    "args": {
+      "captions": [
+        {
+          "start": 2.3,
+          "end": 3.0,
+          "text": "hello"
+        },
+        {
+          "start": 3.1,
+          "end": 3.8,
+          "text": "world"
+        }
+      ],
+      "style": {
+        "fontSize": 0.065,
+        "fontWeight": 800,
+        "strokeWidth": 0.006,
+        "strokeColor": "#000000",
+        "fontFamily": "Inter",
+        "color": "#ffffff"
+      },
+      "offsetY": 0.35,
+      "path": "D:/work/autoclip/data/tmp/basic"
+    }
+  }
+]
