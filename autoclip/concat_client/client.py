@@ -208,25 +208,30 @@ class SyncConcatClient:
         self._inner = ConcatClient(settings, dump_tools=dump_tools)
         self._portal_cm = None
         self._portal: BlockingPortal | None = None
+        self._client_cm = None
 
     def __enter__(self) -> Self:
         self._portal_cm = start_blocking_portal()
         self._portal = self._portal_cm.__enter__()
         try:
-            self._portal.call(self._inner.__aenter__)
+            # stdio_client của mcp mở cancel scope: vào và ra phải cùng một task,
+            # nên để portal giữ cả vòng đời context manager trong một task riêng.
+            self._client_cm = self._portal.wrap_async_context_manager(self._inner)
+            self._client_cm.__enter__()
         except BaseException:
             self._portal_cm.__exit__(None, None, None)
+            self._portal = self._portal_cm = self._client_cm = None
             raise
         return self
 
     def __exit__(self, *exc: Any) -> None:
         try:
-            if self._portal is not None:
-                self._portal.call(self._inner.__aexit__, None, None, None)
+            if self._client_cm is not None:
+                self._client_cm.__exit__(*exc)
         finally:
             if self._portal_cm is not None:
-                self._portal_cm.__exit__(*exc)
-            self._portal = self._portal_cm = None
+                self._portal_cm.__exit__(None, None, None)
+            self._portal = self._portal_cm = self._client_cm = None
 
     def _call(self, fn, *args: Any, **kwargs: Any) -> Any:
         if self._portal is None:
