@@ -1,0 +1,98 @@
+{
+  "name": "basic-hook-recipe",
+  "aspect": "9:16",
+  "duration_target": [
+    6.3,
+    7.7
+  ],
+  "music": {
+    "mode": "source",
+    "beat_sync": false
+  },
+  "slots": [
+    {
+      "role": "hook",
+      "dur": [
+        1.7,
+        2.3
+      ],
+      "want_tags": [],
+      "transition": []
+    },
+    {
+      "role": "body",
+      "dur": [
+        2.55,
+        3.45
+      ],
+      "repeat": [
+        1,
+        1
+      ],
+      "want_tags": [],
+      "transition": [
+        "concat.zoom-transition"
+      ]
+    },
+    {
+      "role": "outro",
+      "dur": [
+        1.7,
+        2.3
+      ],
+      "want_tags": [],
+      "transition": []
+    }
+  ],
+  "texts": [
+    {
+      "kind": "headline",
+      "slot": "hook",
+      "style": "bold-stroke",
+      "pos": [
+        0.5,
+        0.15
+      ],
+      "source": "capcut"
+    },
+    {
+      "kind": "headline",
+      "slot": "body",
+      "style": "bold",
+      "pos": [
+        0.55,
+        0.7
+      ],
+      "source": "capcut"
+    }
+  ],
+  "variation": {
+    "palette": [
+      "#ffd400",
+      "#ffffff"
+    ],
+    "fonts": [
+      "Inter",
+      "Roboto"
+    ],
+    "shuffle_body": true
+  },
+  "source_project": "Basic Hook",
+  "unmapped": [
+    {
+      "kind": "effect",
+      "name": "Hologram",
+      "note": "không có effect Concat tương đương"
+    },
+    {
+      "kind": "sticker",
+      "name": "Arrow",
+      "note": "ReiCut không có sticker tương đương"
+    },
+    {
+      "kind": "transition",
+      "name": "Glitch Pro",
+      "note": "không map được, dùng cut"
+    }
+  ]
+}
