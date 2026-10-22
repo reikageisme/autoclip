@@ -1,0 +1,27 @@
+# Dữ liệu, media, secret — không commit
+data/
+samples/*
+!samples/.gitkeep
+.env
+*.mp4
+*.mov
+REPORT-*.md
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+build/
+dist/
+
+# Editor / OS
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
+
+# Cài đặt Claude Code riêng của từng máy
+.claude/settings.local.json

@@ -1,0 +1,45 @@
+[project]
+name = "autoclip"
+version = "0.1.0"
+description = "Tự động sinh video ngắn từ project CapCut mẫu, dựng/render bằng ReiCut headless"
+readme = "CLAUDE.md"
+requires-python = ">=3.11"
+dependencies = [
+    "mcp>=1.9",
+    "pydantic>=2.7",
+    "pydantic-settings>=2.3",
+    "sqlalchemy>=2.0",
+    "alembic>=1.13",
+    "typer>=0.12",
+    "fastapi>=0.115",
+    "uvicorn>=0.30",
+    "scenedetect[opencv]>=0.6.4",
+    "faster-whisper>=1.0",
+    "imagehash>=4.3",
+    "pillow>=10.0",
+    "numpy>=1.26",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.6",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["autoclip"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = ["autoclip/db/migrations/versions"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
