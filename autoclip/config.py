@@ -30,7 +30,17 @@ class Settings(BaseSettings):
     data_dir: Path = _REPO_ROOT / "data"
 
     # --- LLM (P3) ---
-    llm_provider: Literal["none", "openai", "anthropic"] = "none"
+    # "openai_compat": endpoint kiểu OpenAI (/v1/chat/completions) như router riêng (9router).
+    llm_provider: Literal["none", "openai", "anthropic", "openai_compat"] = "none"
+    llm_base_url: str | None = None
+    """URL gốc kèm /v1 (ví dụ http://127.0.0.1:<port>/v1) — bắt buộc khi openai_compat."""
+    llm_api_key: SecretStr | None = None
+    """Key cho openai_compat; openai/anthropic dùng OPENAI_API_KEY/ANTHROPIC_API_KEY."""
+    llm_model: str | None = None
+    """Tên model đúng như router liệt kê ở /v1/models."""
+    vision_model: str | None = None
+    """Model nhận ảnh cho vision tagging/QA; None = tắt vision, dùng heuristic."""
+    llm_timeout_sec: float = 60.0
     openai_api_key: SecretStr | None = None
     anthropic_api_key: SecretStr | None = None
 
