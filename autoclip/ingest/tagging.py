@@ -117,11 +117,9 @@ class HeuristicTagger:
             logger.debug("opencv not installed; face tag disabled")
             return False
         if self._cascade is None:
+            cascade_root = getattr(getattr(cv2, "data", None), "haarcascades", "")
             cascade_path = os.path.join(
-                getattr(cv2, "data", None).haarcascades
-                if getattr(cv2, "data", None)
-                else "",
-                "haarcascade_frontalface_default.xml",
+                cascade_root, "haarcascade_frontalface_default.xml"
             )
             if not cascade_path or not os.path.exists(cascade_path):
                 logger.debug("Haar cascade not found; face tag disabled")
