@@ -1,5 +1,6 @@
 ﻿from __future__ import annotations
 
+import dataclasses
 import shutil
 from pathlib import Path
 from typing import Any
@@ -21,7 +22,10 @@ class InMemoryRepo:
 
     def add_clip(self, clip: ClipInfo) -> ClipInfo:
         clip_id = len(self.clips) + 1
-        saved = clip.model_copy(update={"id": clip_id})
+        if hasattr(clip, "model_copy"):
+            saved = clip.model_copy(update={"id": clip_id})
+        else:
+            saved = dataclasses.replace(clip, id=clip_id)
         self.clips.append((clip_id, saved))
         return saved
 

@@ -23,13 +23,14 @@ class DraftStatus(StrEnum):
 
 @dataclass(slots=True)
 class ClipInfo:
-    path: str
-    sha1: str
-    duration: float
-    width: int
-    height: int
-    fps: float
-    has_audio: bool
+    id: int | None = None
+    path: str = ""
+    sha1: str = ""
+    duration: float = 0.0
+    width: int = 0
+    height: int = 0
+    fps: float = 0.0
+    has_audio: bool = False
 
 
 @dataclass(slots=True)
