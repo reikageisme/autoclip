@@ -1,4 +1,20 @@
-"""Ingest clip source: ffprobe, scene detect, Whisper, tagging, phash dedupe, thumbnail.
+"""Media ingest: probe, scene detection, transcription, tagging and dedupe."""
 
-Sở hữu: agent media-ingest. Ghi DB CHỈ qua `autoclip.contracts.ClipRepository`.
-"""
+from __future__ import annotations
+
+from .pipeline import IngestOptions, ingest_folder
+from .probe import ProbeError, probe, sha1_file
+from .scenes import detect_scenes, merge_short_scenes
+from .transcribe import Transcriber, TranscriptSegment
+
+__all__ = [
+    "IngestOptions",
+    "ProbeError",
+    "Transcriber",
+    "TranscriptSegment",
+    "detect_scenes",
+    "ingest_folder",
+    "merge_short_scenes",
+    "probe",
+    "sha1_file",
+]
