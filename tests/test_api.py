@@ -74,3 +74,33 @@ def test_rejects_unknown_or_escaping_recipe(client):
 
 def test_missing_render_video_404(client):
     assert client.get("/api/renders/999/video").status_code == 404
+
+
+def test_settings_roundtrip_keeps_key_and_comments(tmp_path, monkeypatch):
+    env = tmp_path / ".env"
+    env.write_text("# giữ chú thích\nLLM_PROVIDER=none\nLLM_API_KEY=sk-old\n", encoding="utf-8")
+    monkeypatch.setenv("DATA_DIR", str(tmp_path / "data"))
+    for k in ("LLM_PROVIDER", "LLM_MODEL", "LLM_API_KEY", "LLM_BASE_URL"):
+        monkeypatch.delenv(k, raising=False)
+    get_settings.cache_clear()
+    with TestClient(create_app(env_file=env)) as c:
+        r = c.put(
+            "/api/settings",
+            json={
+                "llm_provider": "openai_compat",
+                "llm_model": "m1",
+                "llm_api_key": "",
+                "llm_base_url": "http://x/v1",
+            },
+        )
+        assert r.status_code == 200
+        text = env.read_text(encoding="utf-8")
+        assert "# giữ chú thích" in text and "LLM_API_KEY=sk-old" in text
+        assert "LLM_PROVIDER=openai_compat" in text and "LLM_MODEL=m1" in text
+        assert "sk-old" not in r.text  # API không bao giờ trả key
+    get_settings.cache_clear()
+
+
+def test_ingest_rejects_missing_folder(client, tmp_path):
+    assert client.post("/api/ingest", json={"folder": str(tmp_path / "nope")}).status_code == 404
+    assert client.get("/api/clips").json() == []

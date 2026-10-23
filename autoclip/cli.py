@@ -211,14 +211,44 @@ def fetch(
 @app.command()
 def serve(
     port: int = typer.Option(8787, help="Cổng (chỉ nghe 127.0.0.1)"),
+    parent_pid: int = typer.Option(None, help="Tự thoát khi tiến trình này (ReiCut) kết thúc"),
 ) -> None:
     """Chạy API + dashboard web tại http://127.0.0.1:8787 (panel ReiCut cũng gọi API này)."""
     import uvicorn
 
     from autoclip.api import create_app
 
+    if parent_pid:
+        _exit_with_parent(parent_pid)
     typer.echo(f"Dashboard: http://127.0.0.1:{port}")
     uvicorn.run(create_app(), host="127.0.0.1", port=port, log_level="info")
+
+
+def _exit_with_parent(pid: int) -> None:
+    """Dịch vụ do ReiCut bật phải tắt theo ReiCut, kể cả khi ReiCut bị đóng đột ngột."""
+    import os
+    import threading
+    import time
+
+    def watch() -> None:
+        if sys.platform == "win32":
+            import ctypes
+
+            synchronize, infinite = 0x00100000, 0xFFFFFFFF
+            kernel32 = ctypes.windll.kernel32
+            handle = kernel32.OpenProcess(synchronize, False, pid)
+            if handle:
+                kernel32.WaitForSingleObject(handle, infinite)
+        else:
+            while True:
+                try:
+                    os.kill(pid, 0)
+                except OSError:
+                    break
+                time.sleep(2)
+        os._exit(0)
+
+    threading.Thread(target=watch, name="parent-watch", daemon=True).start()
 
 
 @app.command("concat-tools")
