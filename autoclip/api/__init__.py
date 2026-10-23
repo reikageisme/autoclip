@@ -249,6 +249,26 @@ class BatchRunner:
 
         return self._start("rerender", f"Dựng lại video #{render_id}", 1, work)
 
+    def start_vision(self, limit: int | None) -> dict[str, Any]:
+        def work() -> str:
+            from autoclip.llm import LLMClient
+            from autoclip.vision_tag import tag_segments
+
+            llm = LLMClient.from_settings(get_settings(), vision=True)
+            if not llm.available:
+                raise RuntimeError("chưa cấu hình model nhìn ảnh (Cài đặt > Model nhìn ảnh)")
+            engine = make_engine()
+            done, failed = tag_segments(
+                engine,
+                llm,
+                limit=limit,
+                progress=lambda i, n: self.state.update(done=i, requested=n),
+            )
+            engine.dispose()
+            return f"Đã gắn nhãn cảnh cho {done} đoạn, {failed} lỗi"
+
+        return self._start("vision", "AI gắn nhãn cảnh", 0, work)
+
     def start_fetch(self, req: FetchRequest) -> dict[str, Any]:
         def work() -> str:
             from autoclip.fetch import expand_urls, fetch
@@ -649,6 +669,10 @@ def create_app(
                 done.append(stem)
             db.commit()
         return {"folder": str(dest), "count": len(done), "files": done}
+
+    @app.post("/api/vision-tag", status_code=202)
+    def vision_tag(limit: int | None = None) -> dict[str, Any]:
+        return runner.start_vision(limit)
 
     @app.get("/api/brand")
     def read_brand() -> dict[str, Any]:

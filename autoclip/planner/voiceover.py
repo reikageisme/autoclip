@@ -20,6 +20,7 @@ from autoclip.planner.base import (
     clean_headline,
     focus_of,
 )
+from autoclip.vision_tag import line_scenes, scene_tags
 
 MIN_SPEED = 0.7
 
@@ -31,12 +32,18 @@ class Line:
     seconds: float
 
 
-def _choose(rng: random.Random, free: list[SegmentInfo], need: float) -> SegmentInfo:
+def _choose(
+    rng: random.Random, free: list[SegmentInfo], need: float, wanted: set[str] | None = None
+) -> SegmentInfo:
+    """Đoạn đủ dài cho câu đọc; câu nhắc tới cảnh nào (nhãn AI) thì ưu tiên cảnh đó."""
     if not free:
         raise PlanError("hết segment chưa dùng — ingest thêm clip nguồn")
     fits = [s for s in free if s.end - s.start >= need]
     close = [s for s in free if s.end - s.start >= need * MIN_SPEED]
     pool = fits or close or sorted(free, key=lambda s: s.start - s.end)[:5]
+    if wanted:
+        matched = [s for s in pool if scene_tags(s.tags) & wanted]
+        pool = matched or pool
     quiet = [s for s in pool if not (s.transcript or "").strip()]
     return rng.choice(quiet or pool)
 
@@ -64,7 +71,7 @@ def plan_voiceover(
     voice: list[dict] = []
     cursor = 0.0
     for i, line in enumerate(lines):
-        seg = _choose(rng, free, line.seconds)
+        seg = _choose(rng, free, line.seconds, line_scenes(line.text))
         free = [s for s in free if s.id != seg.id]
         seg_len = seg.end - seg.start
         if seg_len >= line.seconds:

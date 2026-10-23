@@ -135,3 +135,18 @@ def test_llm_planner_falls_back_to_rules(tmp_path, answer):
     rules = RulePlanner().plan(spec, pool, 5, set())
     assert plan.params["planner"] == "rules(fallback)"
     assert [i.segment_id for i in plan.items] == [i.segment_id for i in rules.items]
+
+
+def test_voiceover_prefers_scene_matching_line(tmp_path):
+    from autoclip.planner.voiceover import Line, plan_voiceover
+    from autoclip.vision_tag import line_scenes
+
+    spec, pool = load_recipe(RECIPE), make_pool(tmp_path)
+    target = pool.segments[17]
+    target.tags = [*target.tags, "scene:container"]
+    wav = tmp_path / "a.wav"
+    wav.write_bytes(b"x")
+    assert line_scenes("Container chạy đều mỗi tuần") == {"container"}
+    plan = plan_voiceover(spec, pool, 5, set(), [Line("Container chạy đều mỗi tuần", wav, 3.0)])
+    assert plan.items[0].segment_id == target.id
+    assert plan.params["mute_source"] and plan.params["voiceover"][0]["start"] == 0.0
