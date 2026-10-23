@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import logging
 import random
+import threading
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -182,6 +184,7 @@ def run_batch(
     voice: VoiceOptions | None = None,
     attempts: int = 3,
     settings: Settings | None = None,
+    workers: int | None = None,
     render_fn: Callable[[RecipeSpec, RenderPlan], RenderResult] = render,
     qa_fn: Callable[[Path, RecipeSpec, RenderPlan], QAResult] = _qa,
     progress: Callable[[BatchItem], None] | None = None,
@@ -189,75 +192,110 @@ def run_batch(
     s = settings or get_settings()
     engine = make_engine()
     upgrade(engine)
-    sessions = Session(engine, expire_on_commit=False)
     repo = SqlClipRepository(engine)
     pool = load_pool(repo)
     planner = make_planner(use_llm)
     base_seed = seed if seed is not None else random.randrange(1_000_000)
     exclude = recent_segment_ids(engine, s.no_repeat_last_n_renders)
     result = BatchResult(recipe=spec.name, requested=count)
+    worker_count = max(1, min(int(workers or s.render_workers or 1), max(1, count), 16))
+    lock = threading.Lock()
+    stop = threading.Event()
+
+    with Session(engine, expire_on_commit=False) as db:
+        recipe_id = _recipe_id(db, spec)
+        db.commit()
+
     log.info(
-        "batch %s x%d: planner=%s, kho %d segment, loại %d segment đã dùng gần đây",
+        "batch %s x%d: planner=%s, %d worker, kho %d segment, loại %d segment đã dùng gần đây",
         spec.name,
         count,
         planner.name,
+        worker_count,
         len(pool.segments),
         len(exclude),
     )
 
-    with sessions as db:
-        recipe_id = _recipe_id(db, spec)
-        db.commit()
+    def set_job(job_id: int, **fields: object) -> None:
+        with Session(engine, expire_on_commit=False) as db:
+            job = db.get(Job, job_id)
+            if job is not None:
+                for key, value in fields.items():
+                    setattr(job, key, value)
+                db.commit()
 
-        for n in range(count):
-            job_seed = base_seed + n
+    def delete_job(job_id: int) -> None:
+        with Session(engine, expire_on_commit=False) as db:
+            job = db.get(Job, job_id)
+            if job is not None:
+                db.delete(job)
+                db.commit()
+
+    def release(ids: set[int]) -> None:
+        with lock:
+            exclude.difference_update(ids)
+
+    def process(n: int) -> BatchItem | None:
+        if stop.is_set():
+            return None
+        job_seed = base_seed + n
+        with Session(engine, expire_on_commit=False) as db:
             job = Job(recipe_id=recipe_id, seed=job_seed, status="queued")
             db.add(job)
             db.commit()
-            item = BatchItem(job_id=job.id, seed=job_seed, status="queued")
+            job_id = job.id
+        item = BatchItem(job_id=job_id, seed=job_seed, status="queued")
+        reserved: set[int] = set()
 
-            retry_plan: RenderPlan | None = None
-            for attempt in range(attempts):
-                plan_seed = job_seed + attempt * RETRY_SEED_STEP
-                job.attempts = attempt + 1
-                job.status = "running"
-                db.commit()
+        for attempt in range(attempts):
+            if stop.is_set() and attempt == 0:
+                delete_job(job_id)
+                return None
+            plan_seed = job_seed + attempt * RETRY_SEED_STEP
+            set_job(job_id, attempts=attempt + 1, status="running")
+            with lock:
+                if stop.is_set() and attempt == 0:
+                    delete_job(job_id)
+                    return None
                 try:
-                    if retry_plan is not None:
-                        plan, retry_plan = retry_plan, None
-                    else:
-                        plan = (
-                            voice_plan(spec, pool, plan_seed, exclude, voice, s, use_llm)
-                            if voice
-                            else planner.plan(spec, pool, plan_seed, exclude)
-                        )
+                    plan = (
+                        voice_plan(spec, pool, plan_seed, exclude, voice, s, use_llm)
+                        if voice
+                        else planner.plan(spec, pool, plan_seed, exclude)
+                    )
                 except PlanError as exc:
                     result.stopped_reason = (
                         f"Kho clip đã dùng hết sau {len(result.done)} video — nhập thêm clip nguồn"
                     )
+                    stop.set()
                     if attempt == 0:
-                        # Chưa dựng gì: không để lại một job "lỗi" trong hàng đợi.
-                        db.delete(job)
-                        db.commit()
-                        item = None
-                    else:
-                        job.status, job.error = "failed", str(exc)
-                        db.commit()
-                        item.status, item.error = "failed", str(exc)
-                    break
-                try:
-                    rendered = render_fn(spec, plan)
-                    job.status = "qa"
-                    db.commit()
-                    qa = qa_fn(rendered.output, _qa_spec(spec, rendered.plan), rendered.plan)
-                except Exception as exc:  # render/QA lỗi → thử seed khác
-                    log.exception("job %s lần %d lỗi", job.id, attempt + 1)
-                    job.error = f"{type(exc).__name__}: {exc}"
-                    item.status, item.error = "failed", job.error
-                    continue
+                        delete_job(job_id)
+                        return None
+                    set_job(job_id, status="failed", error=str(exc))
+                    item.status, item.error = "failed", str(exc)
+                    return item
+                ids = {i.segment_id for i in plan.items if i.segment_id is not None}
+                reserved |= ids - exclude
+                exclude.update(ids)
 
+            try:
+                rendered = render_fn(spec, plan)
+                set_job(job_id, status="qa")
+                qa = qa_fn(rendered.output, _qa_spec(spec, rendered.plan), rendered.plan)
+            except Exception as exc:  # render/QA lỗi → thử seed khác
+                log.exception("job %s lần %d lỗi", job_id, attempt + 1)
+                error = f"{type(exc).__name__}: {exc}"
+                item.status, item.error = "failed", error
+                set_job(job_id, error=error)
+                release(reserved)
+                reserved.clear()
+                continue
+
+            item.plan, item.qa, item.output = plan, qa, rendered.output
+            item.render_sec, item.video_sec = rendered.render_sec, rendered.video_sec
+            with Session(engine, expire_on_commit=False) as db:
                 row = Render(
-                    job_id=job.id,
+                    job_id=job_id,
                     output_path=str(rendered.output),
                     qa_score=qa.score,
                     qa_notes="; ".join(qa.notes) or None,
@@ -267,33 +305,42 @@ def run_batch(
                 )
                 db.add(row)
                 db.flush()
-                item.plan, item.qa, item.output = plan, qa, rendered.output
-                item.render_sec, item.video_sec = rendered.render_sec, rendered.video_sec
+                job = db.get(Job, job_id)
                 if qa.passed:
                     ids = {i.segment_id for i in plan.items if i.segment_id is not None}
                     db.add_all(
                         UsageLog(segment_id=sid, render_id=row.id, used_at=datetime.now(UTC))
                         for sid in ids
                     )
-                    exclude |= ids
-                    job.status, job.error = "done", None
+                    if job is not None:
+                        job.status, job.error = "done", None
                     item.status, item.error = "done", None
                     db.commit()
-                    break
-                job.error = "QA trượt: " + "; ".join(qa.notes)
-                item.status, item.error = "failed", job.error
+                    return item
+                if job is not None:
+                    job.error = "QA trượt: " + "; ".join(qa.notes)
+                item.status = "failed"
+                item.error = "QA trượt: " + "; ".join(qa.notes)
                 db.commit()
-                # Đoạn đen: lỗi render của Concat phụ thuộc chuỗi cảnh liền trước (không phải
-                # transition) — lần thử sau lập plan mới bằng seed khác, chuỗi cảnh khác.
-            else:
-                job.status = "failed"
-                db.commit()
+            # Đoạn đen: lỗi render của Concat phụ thuộc chuỗi cảnh liền trước (không phải
+            # transition) — lần thử sau lập plan mới bằng seed khác, chuỗi cảnh khác.
+            release(reserved)
+            reserved.clear()
 
-            if item is not None:
-                result.items.append(item)
-                if progress:
-                    progress(item)
-            if result.stopped_reason:
-                break
-    engine.dispose()
+        set_job(job_id, status="failed")
+        return item
+
+    try:
+        if count > 0:
+            with ThreadPoolExecutor(max_workers=worker_count) as executor:
+                futures = [executor.submit(process, n) for n in range(count)]
+                for future in as_completed(futures):
+                    item = future.result()
+                    if item is not None:
+                        result.items.append(item)
+                        if progress:
+                            progress(item)
+    finally:
+        result.items.sort(key=lambda i: i.seed)
+        engine.dispose()
     return result

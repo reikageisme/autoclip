@@ -13,10 +13,19 @@ Hai giao diện cùng gọi một API nên thấy chung hàng đợi, kho clip v
     POST /api/fetch                   {urls, page?, whisper} → tải video rồi nhập
     GET  /api/jobs?limit=50           job mới nhất kèm render, QA, thumbnail
     GET  /api/renders/{id}/video      file MP4
-    GET  /api/settings                cài đặt LLM/Whisper (không trả key)
-    PUT  /api/settings                lưu cài đặt vào .env
+    GET  /api/settings                cài đặt LLM/Whisper/Facebook (không trả key)
+    PUT  /api/settings                lưu cài đặt; token Facebook vào DPAPI
     GET  /api/settings/models         model mà endpoint LLM liệt kê
     POST /api/settings/test           gọi thử LLM
+    POST /api/settings/facebook/test  kiểm tra Page id + token
+    POST /api/renders/{id}/publish    đăng ngay hoặc hẹn giờ lên Page
+    GET  /api/publications            lịch sử đăng bài
+    POST /api/metrics/import          nhập CSV lượt xem vào bảng metrics
+    GET  /api/metrics                 metrics gần đây + hiệu quả theo kiểu video
+    GET  /api/schedules               lịch chạy batch
+    POST /api/schedules               thêm lịch chạy (một lần hoặc lặp)
+    GET  /api/system                  dung lượng ổ đĩa + cấu hình dọn dẹp
+    POST /api/system/cleanup          dọn proxy/project/video cũ
     GET  /                            dashboard web
 """
 
@@ -30,6 +39,8 @@ import threading
 import time
 import urllib.request
 from collections.abc import Callable
+from contextlib import asynccontextmanager
+from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
@@ -48,6 +59,7 @@ from autoclip.db import make_engine
 from autoclip.db.migrate import upgrade
 from autoclip.db.models import Clip, Job, Recipe, Render, Segment
 from autoclip.diversity import recent_segment_ids
+from autoclip.metrics import best_recipe, import_metrics, list_metrics, recipe_scores
 from autoclip.styles import (
     TRANSITIONS,
     StyleForm,
@@ -63,12 +75,17 @@ STATIC = Path(__file__).resolve().parent / "static"
 
 
 class BatchRequest(BaseModel):
-    recipe: str = Field(..., description="Tên file trong recipes/, ví dụ hook-3cut-caption.json")
+    recipe: str = Field(
+        ...,
+        description="Tên file trong recipes/, hoặc 'auto' để ưu tiên kiểu có views cao",
+    )
     count: int = Field(5, ge=1, le=100)
     seed: int | None = None
     llm: bool = True
     voice: VoiceOptions | None = None
     """Có thì làm video lồng tiếng (kịch bản AI theo chủ đề hoặc gõ tay)."""
+    workers: int | None = Field(None, ge=1, le=16)
+    """Số job render song song; trống = RENDER_WORKERS trong .env."""
 
 
 class IngestRequest(BaseModel):
@@ -104,6 +121,156 @@ class SettingsUpdate(BaseModel):
     llm_timeout_sec: float | None = Field(None, gt=0, le=1800)
     vision_model: str | None = None
     whisper_model: str | None = None
+    fb_page_id: str | None = None
+    fb_graph_version: str | None = None
+    fb_token: str | None = Field(None, description="Chỉ ghi; bỏ trống = giữ token cũ")
+    render_workers: int | None = Field(None, ge=1, le=16)
+    maintenance_interval_min: int | None = Field(None, ge=1, le=1440)
+    cleanup_proxies_days: int | None = Field(None, ge=0, le=3650)
+    cleanup_projects_days: int | None = Field(None, ge=0, le=3650)
+    cleanup_videos_days: int | None = Field(None, ge=0, le=3650)
+    disk_warn_free_gb: float | None = Field(None, ge=0, le=1000)
+
+
+class PublishRequest(BaseModel):
+    at: datetime | None = Field(None, description="Giờ hẹn (ISO); trống = đăng ngay")
+    caption: str | None = None
+
+
+class MetricsImportRequest(BaseModel):
+    csv: str = Field(..., min_length=1)
+    platform: str = "facebook"
+    render_id: int | None = None
+
+
+class ScheduleRequest(BaseModel):
+    recipe: str = "auto"
+    count: int = Field(5, ge=1, le=100)
+    at: datetime = Field(..., description="Giờ chạy (ISO); quá khứ = chạy ngay")
+    repeat_minutes: int = Field(0, ge=0, le=10080)
+    seed: int | None = None
+    llm: bool = True
+    voice: VoiceOptions | None = None
+    workers: int | None = Field(None, ge=1, le=16)
+
+
+class ToggleRequest(BaseModel):
+    enabled: bool
+
+
+class CleanupRequest(BaseModel):
+    dry_run: bool = False
+    proxies_days: int | None = Field(None, ge=0, le=3650)
+    projects_days: int | None = Field(None, ge=0, le=3650)
+    videos_days: int | None = Field(None, ge=0, le=3650)
+
+
+class PublishScheduler:
+    """Vòng nền gửi các lịch đăng đã tới giờ; chỉ dòng người dùng tạo mới có trong DB."""
+
+    def __init__(self, engine, settings_fn: Callable[[], Settings]) -> None:
+        self.engine = engine
+        self.settings_fn = settings_fn
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+
+    def start(self) -> None:
+        if self._thread and self._thread.is_alive():
+            return
+        self._thread = threading.Thread(target=self._loop, name="autoclip-publish", daemon=True)
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop.set()
+        if self._thread:
+            self._thread.join(timeout=5)
+
+    def _loop(self) -> None:
+        from autoclip.publish import publish_due
+
+        while not self._stop.wait(max(5, self.settings_fn().publish_check_sec)):
+            try:
+                publish_due(self.engine, self.settings_fn())
+            except Exception:
+                log.exception("scheduler đăng bài lỗi")
+
+
+class MaintenanceScheduler:
+    """Chạy lịch batch, dọn dữ liệu định kỳ và cảnh báo ổ đĩa khi service đang bật."""
+
+    def __init__(
+        self,
+        engine,
+        runner: BatchRunner,
+        resolve_spec: Callable[[str], RecipeSpec],
+        settings_fn: Callable[[], Settings],
+    ) -> None:
+        self.engine = engine
+        self.runner = runner
+        self.resolve_spec = resolve_spec
+        self.settings_fn = settings_fn
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+        self._last_cleanup = time.monotonic()
+
+    def start(self) -> None:
+        if self._thread and self._thread.is_alive():
+            return
+        self._thread = threading.Thread(target=self._loop, name="autoclip-maintenance", daemon=True)
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop.set()
+        if self._thread:
+            self._thread.join(timeout=5)
+
+    def _loop(self) -> None:
+        while not self._stop.wait(30):
+            try:
+                self._maintain()
+            except Exception:
+                log.exception("bảo trì định kỳ lỗi")
+
+    def _maintain(self) -> None:
+        from autoclip.ops import cleanup, disk_status
+        from autoclip.schedules import defer, due_schedules, mark_run
+
+        s = self.settings_fn()
+        if time.monotonic() - self._last_cleanup >= s.maintenance_interval_min * 60:
+            self._last_cleanup = time.monotonic()
+            report = cleanup(s)
+            if report.deleted:
+                log.info("bảo trì: xoá %d mục, %.1f MB", report.deleted, report.mb_freed)
+            for disk in disk_status(s):
+                if disk.low:
+                    log.warning(
+                        "ổ %s chỉ còn %.1f GB (ngưỡng %.1f GB)",
+                        disk.path,
+                        disk.free_gb,
+                        s.disk_warn_free_gb,
+                    )
+        for row in due_schedules(self.engine):
+            if self.runner.busy:
+                return
+            opts = row.options or {}
+            req = BatchRequest(
+                recipe=row.recipe,
+                count=row.count,
+                seed=row.seed,
+                llm=bool(opts.get("llm", True)),
+                voice=opts.get("voice"),
+                workers=opts.get("workers"),
+            )
+            try:
+                self.runner.start(self.resolve_spec(row.recipe), req)
+            except HTTPException as exc:
+                if exc.status_code == 409:
+                    return
+                log.warning("lịch %s chưa chạy được: %s", row.id, exc.detail)
+                defer(self.engine, row.id, 5)
+                continue
+            mark_run(self.engine, row.id)
+            log.info("lịch %s: đã bắt đầu %s x%d", row.id, row.recipe, row.count)
 
 
 class BatchRunner:
@@ -165,7 +332,13 @@ class BatchRunner:
                 from autoclip.batch import run_batch as run
             extra = {"voice": req.voice} if req.voice else {}
             result = run(
-                spec, req.count, seed=req.seed, use_llm=req.llm, progress=self._progress, **extra
+                spec,
+                req.count,
+                seed=req.seed,
+                use_llm=req.llm,
+                progress=self._progress,
+                workers=req.workers,
+                **extra,
             )
             self.state["stopped_reason"] = result.stopped_reason
             return None
@@ -356,8 +529,24 @@ def create_app(
     upgrade(engine)
     runner = runner or BatchRunner()
     env_path = env_file or ENV_FILE
-    app = FastAPI(title="AutoClip", version="0.3")
+    publish_scheduler = PublishScheduler(engine, get_settings)
+    maintenance_scheduler: MaintenanceScheduler | None = None
+
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI):
+        publish_scheduler.start()
+        if maintenance_scheduler is not None:
+            maintenance_scheduler.start()
+        try:
+            yield
+        finally:
+            if maintenance_scheduler is not None:
+                maintenance_scheduler.stop()
+            publish_scheduler.stop()
+
+    app = FastAPI(title="AutoClip", version="0.4", lifespan=lifespan)
     app.state.runner = runner
+    app.state.publish_scheduler = publish_scheduler
 
     def styles() -> Styles:
         return Styles(get_settings().data_dir / "recipes")
@@ -367,6 +556,23 @@ def create_app(
         if spec is None:
             raise HTTPException(404, f"không có kiểu video {name}")
         return spec
+
+    def resolve_spec(name: str) -> RecipeSpec:
+        """'auto' = kiểu có views trung bình cao nhất; chưa có metrics thì kiểu đầu tiên."""
+        if name != "auto":
+            return load_spec(name)
+        readable = [
+            spec
+            for _file, spec, _builtin, error in styles().list()
+            if spec is not None and not error
+        ]
+        if not readable:
+            raise HTTPException(404, "chưa có kiểu video nào đọc được")
+        winner = best_recipe(engine, [spec.name for spec in readable])
+        return next((spec for spec in readable if spec.name == winner), readable[0])
+
+    maintenance_scheduler = MaintenanceScheduler(engine, runner, resolve_spec, get_settings)
+    app.state.maintenance_scheduler = maintenance_scheduler
 
     def pool_stats() -> tuple[int, float | None]:
         """(số đoạn còn dùng được, độ dài trung bình của chúng)."""
@@ -383,11 +589,20 @@ def create_app(
     @app.get("/api/recipes")
     def recipes() -> list[dict[str, Any]]:
         available, avg = pool_stats()
+        scores = recipe_scores(engine)
+        ranked = sorted(
+            scores,
+            key=lambda name: (
+                -float(scores[name].get("avg_views", 0)),
+                -int(scores[name].get("samples", 0)),
+            ),
+        )
         out = []
         for file, spec, builtin, error in styles().list():
             if spec is None:
                 out.append({"file": file, "builtin": builtin, "error": error})
                 continue
+            perf = scores.get(spec.name, {})
             out.append(
                 {
                     "file": file,
@@ -399,6 +614,10 @@ def create_app(
                     "duration_target": list(spec.duration_target),
                     "slots": [sl.role for sl in spec.slots],
                     "est_videos": estimate_videos(spec, available, avg),
+                    "avg_views": perf.get("avg_views"),
+                    "total_views": perf.get("total_views"),
+                    "metric_samples": perf.get("samples", 0),
+                    "priority": ranked.index(spec.name) + 1 if spec.name in ranked else None,
                     "form": spec_to_form(spec).model_dump(),
                 }
             )
@@ -464,7 +683,78 @@ def create_app(
 
     @app.post("/api/batches", status_code=202)
     def create_batch(req: BatchRequest) -> dict[str, Any]:
-        return runner.start(load_spec(req.recipe), req)
+        return runner.start(resolve_spec(req.recipe), req)
+
+    @app.get("/api/schedules")
+    def schedules() -> list[dict[str, Any]]:
+        from autoclip import schedules as store
+
+        return [store.serialize(row) for row in store.list_schedules(engine)]
+
+    @app.post("/api/schedules", status_code=201)
+    def add_schedule(req: ScheduleRequest) -> dict[str, Any]:
+        from autoclip import schedules as store
+
+        resolve_spec(req.recipe)
+        options: dict[str, Any] = {"llm": req.llm, "workers": req.workers}
+        if req.voice is not None:
+            options["voice"] = req.voice.model_dump(mode="json")
+        row = store.create_schedule(
+            engine,
+            recipe=req.recipe,
+            count=req.count,
+            run_at=req.at,
+            repeat_minutes=req.repeat_minutes,
+            seed=req.seed,
+            options=options,
+        )
+        return store.serialize(row)
+
+    @app.delete("/api/schedules/{schedule_id}")
+    def remove_schedule(schedule_id: int) -> dict[str, Any]:
+        from autoclip import schedules as store
+
+        if not store.delete_schedule(engine, schedule_id):
+            raise HTTPException(404, "không có lịch này")
+        return {"deleted": schedule_id}
+
+    @app.post("/api/schedules/{schedule_id}/toggle")
+    def toggle_schedule(schedule_id: int, req: ToggleRequest) -> dict[str, Any]:
+        from autoclip import schedules as store
+
+        if not store.set_enabled(engine, schedule_id, req.enabled):
+            raise HTTPException(404, "không có lịch này")
+        return {"id": schedule_id, "enabled": req.enabled}
+
+    @app.get("/api/system")
+    def system() -> dict[str, Any]:
+        from autoclip.ops import disk_status
+
+        cur = get_settings()
+        return {
+            "disk": [asdict(d) for d in disk_status(cur)],
+            "cleanup": {
+                "proxies_days": cur.cleanup_proxies_days,
+                "projects_days": cur.cleanup_projects_days,
+                "videos_days": cur.cleanup_videos_days,
+            },
+            "warn_free_gb": cur.disk_warn_free_gb,
+        }
+
+    @app.post("/api/system/cleanup")
+    def system_cleanup(req: CleanupRequest) -> dict[str, Any]:
+        from autoclip.ops import cleanup
+
+        report = cleanup(
+            get_settings(),
+            dry_run=req.dry_run,
+            proxies_days=req.proxies_days,
+            projects_days=req.projects_days,
+            videos_days=req.videos_days,
+        )
+        out = asdict(report)
+        out["mb_freed"] = report.mb_freed
+        return out
 
     @app.post("/api/ingest", status_code=202)
     def ingest(req: IngestRequest) -> dict[str, Any]:
@@ -545,6 +835,8 @@ def create_app(
 
     @app.get("/api/settings")
     def read_settings() -> dict[str, Any]:
+        from autoclip.publish import facebook_token
+
         cur = get_settings()
         return {
             "llm_provider": cur.llm_provider,
@@ -554,19 +846,47 @@ def create_app(
             "vision_model": cur.vision_model or "",
             "whisper_model": cur.whisper_model,
             "has_api_key": bool(cur.llm_api_key or cur.openai_api_key or cur.anthropic_api_key),
+            "fb_page_id": cur.fb_page_id,
+            "fb_graph_version": cur.fb_graph_version,
+            "has_fb_token": bool(facebook_token(cur)),
+            "render_workers": cur.render_workers,
+            "maintenance_interval_min": cur.maintenance_interval_min,
+            "cleanup_proxies_days": cur.cleanup_proxies_days,
+            "cleanup_projects_days": cur.cleanup_projects_days,
+            "cleanup_videos_days": cur.cleanup_videos_days,
+            "disk_warn_free_gb": cur.disk_warn_free_gb,
         }
 
     @app.put("/api/settings")
     def write_settings(req: SettingsUpdate) -> dict[str, Any]:
+        from autoclip.publish import clear_facebook_token, save_facebook_token
+
+        data = req.model_dump(exclude_none=True)
+        token = data.pop("fb_token", None)
         values: dict[str, str] = {}
-        for field, value in req.model_dump(exclude_none=True).items():
+        for field, value in data.items():
             if field == "llm_api_key" and not str(value).strip():
                 continue  # bỏ trống = giữ key cũ
             values[field.upper()] = str(value).strip()
         if values:
             update_env(env_path, values)
             get_settings.cache_clear()
+        if token is not None:
+            if str(token).strip():
+                save_facebook_token(get_settings(), str(token))
+            elif str(token) == "":
+                clear_facebook_token(get_settings())
         return read_settings()
+
+    @app.post("/api/settings/facebook/test")
+    def test_facebook() -> dict[str, Any]:
+        from autoclip.publish import PublishError, check_page
+
+        try:
+            name = check_page(get_settings())
+        except PublishError as exc:
+            return {"ok": False, "message": str(exc)}
+        return {"ok": True, "message": name}
 
     @app.get("/api/settings/models")
     def list_models() -> list[str]:
@@ -669,6 +989,71 @@ def create_app(
                 done.append(stem)
             db.commit()
         return {"folder": str(dest), "count": len(done), "files": done}
+
+    @app.post("/api/renders/{render_id}/publish", status_code=202)
+    def publish(render_id: int, req: PublishRequest) -> dict[str, Any]:
+        from autoclip.publish import PublishError, schedule_publication
+
+        with Session(engine) as db:
+            get_render(db, render_id)
+        try:
+            row = schedule_publication(
+                engine, render_id, settings=get_settings(), at=req.at, caption=req.caption
+            )
+        except PublishError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        return {
+            "id": row.id,
+            "render_id": row.render_id,
+            "scheduled_at": row.scheduled_at.isoformat() if row.scheduled_at else None,
+            "status": row.status,
+        }
+
+    @app.get("/api/publications")
+    def publications(limit: int = 100) -> list[dict[str, Any]]:
+        from autoclip.publish import list_publications
+
+        return list_publications(engine, limit)
+
+    @app.post("/api/publications/{publication_id}/cancel")
+    def cancel_publication(publication_id: int) -> dict[str, Any]:
+        from autoclip.publish import cancel_publication as cancel
+
+        if not cancel(engine, publication_id):
+            raise HTTPException(409, "chỉ huỷ được lịch đang chờ")
+        return {"id": publication_id, "status": "cancelled"}
+
+    @app.post("/api/publications/{publication_id}/retry")
+    def retry_publication(publication_id: int) -> dict[str, Any]:
+        from autoclip.publish import retry_publication as retry
+
+        if not retry(engine, publication_id):
+            raise HTTPException(409, "chỉ thử lại được lịch lỗi/đã huỷ")
+        return {"id": publication_id, "status": "scheduled"}
+
+    @app.post("/api/metrics/import")
+    def metrics_import(req: MetricsImportRequest) -> dict[str, Any]:
+        from autoclip.metrics import MetricsError
+
+        try:
+            report = import_metrics(
+                engine, req.csv, platform=req.platform, default_render_id=req.render_id
+            )
+        except MetricsError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        return {
+            "imported": report.imported,
+            "skipped": report.skipped,
+            "errors": report.errors,
+            "recipes": report.recipes,
+        }
+
+    @app.get("/api/metrics")
+    def metrics(limit: int = 100) -> dict[str, Any]:
+        return {
+            "rows": list_metrics(engine, limit),
+            "recipes": recipe_scores(engine),
+        }
 
     @app.post("/api/vision-tag", status_code=202)
     def vision_tag(limit: int | None = None) -> dict[str, Any]:

@@ -45,6 +45,15 @@
   .st.running, .st.qa, .st.queued { color: var(--warn); }
   .note { color: var(--muted); font-size: 12px; max-width: 420px; }
   .table-wrap { overflow-x: auto; }
+  textarea { font: 12px/1.4 ui-monospace, Consolas, monospace; color: var(--text);
+             background: var(--bg); border: 1px solid var(--line); border-radius: 6px;
+             padding: 8px; width: 100%; min-height: 90px; }
+  .ok { color: var(--ok); } .bad { color: var(--bad); } .warn { color: var(--warn); }
+  .banner { border-color: var(--warn); background: color-mix(in srgb, var(--warn) 10%, var(--panel)); }
+  button.ghost { background: transparent; color: var(--accent); border: 1px solid var(--line); }
+  button.danger { background: var(--bad); }
+  .actions { display: flex; gap: 6px; flex-wrap: wrap; }
+  .small { font-size: 12px; padding: 5px 9px; }
   dialog { border: 0; border-radius: 10px; padding: 0; background: #000; max-width: min(92vw, 420px); }
   dialog video { display: block; width: 100%; max-height: 85vh; }
   dialog::backdrop { background: rgba(0,0,0,.6); }
@@ -89,6 +98,88 @@
       </table>
     </div>
   </section>
+
+  <section>
+    <h2>Vận hành: render song song, lịch chạy, dọn dữ liệu</h2>
+    <div class="row">
+      <label>Render song song <input id="ops-workers" type="number" min="1" max="16" value="1"></label>
+      <label>Giữ proxy (ngày) <input id="ops-proxies" type="number" min="0" max="3650" value="30"></label>
+      <label>Giữ project (ngày) <input id="ops-projects" type="number" min="0" max="3650" value="7"></label>
+      <label>Giữ video (ngày) <input id="ops-videos" type="number" min="0" max="3650" value="30"></label>
+      <label>Cảnh báo còn (GB) <input id="ops-disk" type="number" min="0" step="0.5" value="5"></label>
+      <button id="ops-save">Lưu cấu hình</button>
+    </div>
+    <div id="ops-msg" class="msg"></div>
+    <div class="row" style="margin-top:12px">
+      <label>Kiểu video <select id="sch-recipe"></select></label>
+      <label>Số video <input id="sch-count" type="number" min="1" max="100" value="5"></label>
+      <label>Chạy lúc <input id="sch-at" type="datetime-local"></label>
+      <label>Lặp mỗi (phút) <input id="sch-repeat" type="number" min="0" max="10080" value="0"></label>
+      <button id="sch-add">Thêm lịch</button>
+    </div>
+    <div id="sch-msg" class="msg"></div>
+    <div class="note">Lịch chỉ chạy khi service AutoClip đang bật; nếu đang có batch khác, lịch sẽ chờ lượt kế tiếp.</div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>#</th><th>Kiểu · số lượng</th><th>Chạy lúc</th><th>Lặp</th><th>Trạng thái</th><th></th></tr></thead>
+        <tbody id="schedules"><tr><td colspan="6" class="note">Chưa có lịch.</td></tr></tbody>
+      </table>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <button id="cleanup-preview" class="ghost">Xem trước dọn dẹp</button>
+      <button id="cleanup-run" class="danger">Dọn ngay</button>
+    </div>
+    <div id="cleanup-msg" class="msg"></div>
+    <div id="disk-status" class="msg"></div>
+  </section>
+
+  <section>
+    <h2>Cài đặt Facebook Page</h2>
+    <div class="row">
+      <label>Page ID <input id="fb-page" placeholder="ví dụ 1234567890"></label>
+      <label>Page access token <input id="fb-token" type="password" placeholder="dán token mới (bỏ trống = giữ)"></label>
+      <button id="fb-save">Lưu</button>
+      <button id="fb-test" class="ghost">Kiểm tra kết nối</button>
+    </div>
+    <div id="fb-msg" class="msg"></div>
+    <div class="note">Token được mã hoá bằng Windows DPAPI trong %LOCALAPPDATA%\AutoClip\secrets, không nằm trong .env. Chỉ video bạn bấm đăng mới được gửi lên Page.</div>
+  </section>
+
+  <section>
+    <h2>Đăng bài</h2>
+    <div class="row">
+      <label>Video <select id="pub-render"></select></label>
+      <label>Hẹn giờ (bỏ trống = đăng ngay) <input id="pub-at" type="datetime-local"></label>
+      <label>Caption (bỏ trống = tiêu đề đã lưu) <input id="pub-caption" style="min-width:260px"></label>
+      <button id="pub-go">Đăng / Hẹn giờ</button>
+    </div>
+    <div id="pub-msg" class="msg"></div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>#</th><th>Video</th><th>Hẹn</th><th>Trạng thái</th><th>Bài viết</th><th>Ghi chú</th></tr></thead>
+        <tbody id="pubs"><tr><td colspan="6" class="note">Chưa có lịch đăng.</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>Hiệu quả kiểu video + nhập CSV lượt xem</h2>
+    <div class="row">
+      <label>File CSV <input id="csv-file" type="file" accept=".csv,text/csv"></label>
+      <label>Nền tảng <input id="csv-platform" value="facebook"></label>
+      <button id="csv-go">Nhập CSV</button>
+    </div>
+    <label style="margin-top:10px">Dán CSV (cột: video hoặc render_id, views, avg_watch, likes, platform, captured_at)
+      <textarea id="csv-text" placeholder="video,views,avg_watch,likes&#10;0001-video.mp4,12000,4.2,340"></textarea>
+    </label>
+    <div id="csv-msg" class="msg"></div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Kiểu video</th><th>Views TB</th><th>Tổng views</th><th>Mẫu</th><th>Ưu tiên</th></tr></thead>
+        <tbody id="perf"><tr><td colspan="5" class="note">Chưa có dữ liệu.</td></tr></tbody>
+      </table>
+    </div>
+  </section>
 </main>
 
 <dialog id="player"><video id="video" controls autoplay playsinline></video></dialog>
@@ -105,14 +196,29 @@ const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({"&":"&amp;","<":"
 
 async function loadRecipes() {
   const list = await api("/api/recipes");
-  $("recipe").innerHTML = list.map((r) =>
-    `<option value="${esc(r.file)}" ${r.error ? "disabled" : ""}>${esc(r.name || r.file)}${r.error ? " (lỗi)" : ` · ${r.duration_target.join("–")}s`}</option>`
-  ).join("") || "<option disabled>Chưa có recipe trong recipes/</option>";
+  const options = list
+    .filter((r) => !r.error)
+    .sort((a, b) => (b.avg_views ?? -1) - (a.avg_views ?? -1))
+    .map((r) => {
+      const perf = r.avg_views != null ? ` · ${Math.round(r.avg_views)} views` : "";
+      return `<option value="${esc(r.file)}">${esc(r.name || r.file)} · ${r.duration_target.join("–")}s${perf}</option>`;
+    }).join("");
+  const choices = `<option value="auto">Tự chọn kiểu hiệu quả nhất</option>${options}`;
+  $("recipe").innerHTML = choices;
+  $("sch-recipe").innerHTML = choices;
+  const perf = list.filter((r) => r.avg_views != null);
+  $("perf").innerHTML = perf.length ? perf.map((r) =>
+    `<tr><td>${esc(r.label || r.name)}<div class="note">${esc(r.file)}</div></td>
+     <td>${Math.round(r.avg_views)}</td><td>${Math.round(r.total_views ?? r.avg_views)}</td>
+     <td>${r.metric_samples || 0}</td><td>${r.priority ?? "—"}</td></tr>`
+  ).join("") : `<tr><td colspan="5" class="note">Chưa có dữ liệu metrics. Nhập CSV ở trên.</td></tr>`;
 }
 
 async function refresh() {
   try {
-    const [st, pool, jobs] = await Promise.all([api("/api/status"), api("/api/pool"), api("/api/jobs?limit=40")]);
+    const [st, pool, jobs, pubs] = await Promise.all([
+      api("/api/status"), api("/api/pool"), api("/api/jobs?limit=40"), api("/api/publications")
+    ]);
     $("s-run").textContent = st.running ? "Đang chạy" : (st.started_at ? "Rảnh" : "Chưa chạy");
     $("s-prog").textContent = st.requested ? `${st.done} / ${st.failed} / ${st.requested}` : "—";
     $("s-avail").textContent = pool.available;
@@ -123,18 +229,218 @@ async function refresh() {
     $("jobs").innerHTML = jobs.length ? jobs.map((j) => {
       const r = j.render;
       const video = r && j.status === "done"
-        ? `<a href="#" data-src="${esc(r.video_url)}">Xem</a> · <a href="${esc(r.video_url)}" download>Tải</a><div class="note">${(r.duration ?? 0).toFixed(1)}s</div>` : "—";
+        ? `<a href="#" data-src="${esc(r.video_url)}">Xem</a> · <a href="${esc(r.video_url)}" download>Tải</a><div class="note">${(r.duration ?? 0).toFixed(1)}s</div>
+           <button class="ghost small" data-pub="${r.id}">Đăng</button>` : "—";
       const note = j.error || (r && r.qa_notes) || "";
       return `<tr><td>${j.id}</td><td>${esc(j.recipe)}<div class="note">seed ${j.seed} · lần ${j.attempts}</div></td>
         <td class="st ${esc(j.status)}">${esc(j.status)}</td>
         <td>${r && r.qa_score != null ? r.qa_score.toFixed(2) : "—"}</td><td>${video}</td>
         <td class="note">${esc(note)}</td></tr>`;
     }).join("") : `<tr><td colspan="6" class="note">Chưa có job nào.</td></tr>`;
+    const done = jobs.filter((j) => j.render && j.status === "done").map((j) => {
+      const r = j.render;
+      return `<option value="${r.id}">#${j.id} · ${esc(r.headline || r.file || r.id)}</option>`;
+    }).join("");
+    const current = $("pub-render").value;
+    $("pub-render").innerHTML = done || "<option disabled>Chưa có video xong</option>";
+    if (current) $("pub-render").value = current;
+    $("pubs").innerHTML = pubs.length ? pubs.map((p) =>
+      `<tr><td>${p.id}</td><td>#${p.render_id}</td><td class="note">${esc((p.scheduled_at || "").replace("T", " ").slice(0, 16))}</td>
+       <td class="st ${p.status === "published" ? "done" : p.status === "failed" ? "failed" : "running"}">${esc(p.status)}</td>
+       <td class="note">${esc(p.fb_post_id || "")}</td>
+       <td class="note">${esc(p.error || "")}
+         ${p.status === "scheduled" ? `<button class="ghost small" data-cancel="${p.id}">Huỷ</button>` : ""}
+         ${(p.status === "failed" || p.status === "cancelled") ? `<button class="ghost small" data-retry="${p.id}">Thử lại</button>` : ""}
+       </td></tr>`
+    ).join("") : `<tr><td colspan="6" class="note">Chưa có lịch đăng.</td></tr>`;
   } catch (e) {
     $("s-note").textContent = `Không gọi được API: ${e.message}`;
     $("s-note").className = "msg err";
   }
 }
+
+async function loadSettings() {
+  const s = await api("/api/settings");
+  $("fb-page").value = s.fb_page_id || "";
+  $("fb-token").placeholder = s.has_fb_token ? "đã lưu token (bỏ trống = giữ)" : "dán token Page";
+  $("ops-workers").value = s.render_workers ?? 1;
+  $("ops-proxies").value = s.cleanup_proxies_days ?? 30;
+  $("ops-projects").value = s.cleanup_projects_days ?? 7;
+  $("ops-videos").value = s.cleanup_videos_days ?? 30;
+  $("ops-disk").value = s.disk_warn_free_gb ?? 5;
+}
+
+async function loadOps() {
+  const [list, sys] = await Promise.all([api("/api/schedules"), api("/api/system")]);
+  $("schedules").innerHTML = list.length ? list.map((r) =>
+    `<tr><td>${r.id}</td><td>${esc(r.recipe)} · ${r.count}</td>
+     <td class="note">${esc(new Date(r.run_at).toLocaleString())}</td>
+     <td>${r.repeat_minutes ? r.repeat_minutes + " phút" : "một lần"}</td>
+     <td class="st ${r.enabled ? "running" : "failed"}">${r.enabled ? "bật" : "tắt"}</td>
+     <td class="actions"><button class="ghost small" data-sch-toggle="${r.id}" data-on="${r.enabled}">${r.enabled ? "Tắt" : "Bật"}</button>
+       <button class="ghost small" data-sch-del="${r.id}">Xoá</button></td></tr>`
+  ).join("") : `<tr><td colspan="6" class="note">Chưa có lịch.</td></tr>`;
+  const low = sys.disk.filter((d) => d.low);
+  $("disk-status").className = "msg" + (low.length ? " err" : "");
+  $("disk-status").textContent = sys.disk.map((d) =>
+    `${d.path} còn ${d.free_gb}/${d.total_gb} GB${d.low ? " (SẮP ĐẦY)" : ""}${d.error ? " — " + d.error : ""}`
+  ).join(" · ");
+}
+
+$("ops-save").addEventListener("click", async () => {
+  $("ops-msg").className = "msg"; $("ops-msg").textContent = "Đang lưu…";
+  try {
+    await api("/api/settings", {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        render_workers: Number($("ops-workers").value),
+        cleanup_proxies_days: Number($("ops-proxies").value),
+        cleanup_projects_days: Number($("ops-projects").value),
+        cleanup_videos_days: Number($("ops-videos").value),
+        disk_warn_free_gb: Number($("ops-disk").value)
+      })
+    });
+    $("ops-msg").className = "msg ok"; $("ops-msg").textContent = "Đã lưu cấu hình vận hành.";
+    await loadSettings(); await loadOps();
+  } catch (e) {
+    $("ops-msg").className = "msg err"; $("ops-msg").textContent = e.message;
+  }
+});
+
+$("sch-add").addEventListener("click", async () => {
+  const at = $("sch-at").value;
+  if (!at) { $("sch-msg").className = "msg err"; $("sch-msg").textContent = "Chọn giờ chạy."; return; }
+  $("sch-msg").className = "msg"; $("sch-msg").textContent = "Đang thêm…";
+  try {
+    await api("/api/schedules", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        recipe: $("sch-recipe").value, count: Number($("sch-count").value),
+        at: new Date(at).toISOString(), repeat_minutes: Number($("sch-repeat").value)
+      })
+    });
+    $("sch-msg").className = "msg ok"; $("sch-msg").textContent = "Đã thêm lịch.";
+    await loadOps();
+  } catch (e) {
+    $("sch-msg").className = "msg err"; $("sch-msg").textContent = e.message;
+  }
+});
+
+$("schedules").addEventListener("click", async (ev) => {
+  const toggle = ev.target.closest("button[data-sch-toggle]");
+  const del = ev.target.closest("button[data-sch-del]");
+  try {
+    if (toggle) {
+      await api(`/api/schedules/${toggle.dataset.schToggle}/toggle`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: toggle.dataset.on !== "true" })
+      });
+    }
+    if (del) await api(`/api/schedules/${del.dataset.schDel}`, { method: "DELETE" });
+    await loadOps();
+  } catch (e) {
+    $("sch-msg").className = "msg err"; $("sch-msg").textContent = e.message;
+  }
+});
+
+async function runCleanup(dryRun) {
+  $("cleanup-msg").className = "msg"; $("cleanup-msg").textContent = dryRun ? "Đang kiểm tra…" : "Đang dọn…";
+  try {
+    const r = await api("/api/system/cleanup", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ dry_run: dryRun })
+    });
+    const count = Object.entries(r.details).map(([k, v]) => `${k}: ${v}`).join(", ");
+    $("cleanup-msg").className = "msg" + (r.errors.length ? " warn" : " ok");
+    $("cleanup-msg").textContent = dryRun
+      ? `Sẽ xoá — ${count}`
+      : `Đã xoá ${r.deleted} mục, giải phóng ${r.mb_freed} MB — ${count}`;
+    await loadOps();
+  } catch (e) {
+    $("cleanup-msg").className = "msg err"; $("cleanup-msg").textContent = e.message;
+  }
+}
+
+$("cleanup-preview").addEventListener("click", () => runCleanup(true));
+$("cleanup-run").addEventListener("click", () => runCleanup(false));
+
+$("fb-save").addEventListener("click", async () => {
+  $("fb-msg").className = "msg"; $("fb-msg").textContent = "Đang lưu…";
+  try {
+    const body = { fb_page_id: $("fb-page").value.trim(), fb_token: $("fb-token").value };
+    await api("/api/settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    $("fb-token").value = "";
+    $("fb-msg").textContent = "Đã lưu. Token nằm trong kho mã hoá DPAPI.";
+    await loadSettings();
+  } catch (e) {
+    $("fb-msg").className = "msg err"; $("fb-msg").textContent = e.message;
+  }
+});
+
+$("fb-test").addEventListener("click", async () => {
+  $("fb-msg").className = "msg"; $("fb-msg").textContent = "Đang kiểm tra…";
+  try {
+    const r = await api("/api/settings/facebook/test", { method: "POST" });
+    $("fb-msg").className = "msg" + (r.ok ? " ok" : " err");
+    $("fb-msg").textContent = r.ok ? `Kết nối được Page: ${r.message}` : r.message;
+  } catch (e) {
+    $("fb-msg").className = "msg err"; $("fb-msg").textContent = e.message;
+  }
+});
+
+$("pub-go").addEventListener("click", async () => {
+  const rid = Number($("pub-render").value);
+  if (!rid) return;
+  const at = $("pub-at").value;
+  const body = { caption: $("pub-caption").value || null };
+  if (at) body.at = new Date(at).toISOString();
+  $("pub-msg").className = "msg"; $("pub-msg").textContent = "Đang gửi…";
+  try {
+    await api(`/api/renders/${rid}/publish`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body)
+    });
+    $("pub-msg").textContent = at ? "Đã hẹn giờ đăng." : "Đã xếp lịch đăng ngay (chờ tối đa 30 giây).";
+    $("pub-at").value = "";
+    refresh();
+  } catch (e) {
+    $("pub-msg").className = "msg err"; $("pub-msg").textContent = e.message;
+  }
+});
+
+$("csv-file").addEventListener("change", async () => {
+  const file = $("csv-file").files[0];
+  if (!file) return;
+  $("csv-text").value = await file.text();
+});
+
+$("csv-go").addEventListener("click", async () => {
+  const csv = $("csv-text").value.trim();
+  if (!csv) { $("csv-msg").className = "msg err"; $("csv-msg").textContent = "Chưa có CSV."; return; }
+  $("csv-msg").className = "msg"; $("csv-msg").textContent = "Đang nhập…";
+  try {
+    const r = await api("/api/metrics/import", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ csv, platform: $("csv-platform").value || "facebook" })
+    });
+    $("csv-msg").className = "msg" + (r.skipped ? " warn" : " ok");
+    $("csv-msg").textContent = `Đã nhập ${r.imported} dòng` + (r.skipped ? `, bỏ qua ${r.skipped}: ${r.errors.join("; ")}` : ".");
+    await loadRecipes();
+  } catch (e) {
+    $("csv-msg").className = "msg err"; $("csv-msg").textContent = e.message;
+  }
+});
+
+$("pubs").addEventListener("click", async (ev) => {
+  const cancel = ev.target.closest("button[data-cancel]");
+  const retry = ev.target.closest("button[data-retry]");
+  try {
+    if (cancel) await api(`/api/publications/${cancel.dataset.cancel}/cancel`, { method: "POST" });
+    if (retry) await api(`/api/publications/${retry.dataset.retry}/retry`, { method: "POST" });
+    refresh();
+  } catch (e) {
+    $("pub-msg").className = "msg err"; $("pub-msg").textContent = e.message;
+  }
+});
 
 $("go").addEventListener("click", async () => {
   const seed = $("seed").value.trim();
@@ -151,6 +457,13 @@ $("go").addEventListener("click", async () => {
 });
 
 $("jobs").addEventListener("click", (ev) => {
+  const pub = ev.target.closest("button[data-pub]");
+  if (pub) {
+    $("pub-render").value = pub.dataset.pub;
+    $("pub-msg").textContent = "Đã chọn video — bấm Đăng / Hẹn giờ ở mục Đăng bài.";
+    $("pub-caption").focus();
+    return;
+  }
   const a = ev.target.closest("a[data-src]");
   if (!a) return;
   ev.preventDefault();
@@ -160,8 +473,11 @@ $("jobs").addEventListener("click", (ev) => {
 $("player").addEventListener("click", (ev) => { if (ev.target === $("player")) { $("video").pause(); $("player").close(); } });
 
 loadRecipes().catch((e) => { $("msg").className = "msg err"; $("msg").textContent = e.message; });
+loadSettings().catch((e) => { $("fb-msg").className = "msg err"; $("fb-msg").textContent = e.message; });
+loadOps().catch((e) => { $("ops-msg").className = "msg err"; $("ops-msg").textContent = e.message; });
 refresh();
 setInterval(refresh, 3000);
+setInterval(() => loadOps().catch(() => {}), 30000);
 </script>
 </body>
 </html>

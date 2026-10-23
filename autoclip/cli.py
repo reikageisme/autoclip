@@ -130,6 +130,9 @@ def batch(
     count: int = typer.Option(20, help="Số video cần sinh"),
     seed: int = typer.Option(None, help="Seed đầu (mặc định ngẫu nhiên)"),
     llm: bool = typer.Option(True, "--llm/--no-llm", help="LLM planner; tắt = theo tag"),
+    workers: int = typer.Option(
+        None, "--workers", "-w", min=1, max=16, help="Số render song song (mặc định RENDER_WORKERS)"
+    ),
 ) -> None:
     """Sinh N video khác nhau: planner → render → QA, không lặp segment, ghi job vào DB."""
     from autoclip.batch import run_batch
@@ -149,7 +152,7 @@ def batch(
         else:
             typer.echo(f"  ✗ job {item.job_id} seed {item.seed}: {item.error}")
 
-    r = run_batch(spec, count, seed=seed, use_llm=llm, progress=show)
+    r = run_batch(spec, count, seed=seed, use_llm=llm, workers=workers, progress=show)
     done = r.done
     seg_sets = [{i.segment_id for i in d.plan.items} for d in done]
     overlap = sum(len(a & b) for k, a in enumerate(seg_sets) for b in seg_sets[k + 1 :])
@@ -280,6 +283,34 @@ def retag() -> None:
                 changed += 1
         db.commit()
     typer.echo(f"Gắn lại nhãn bố cục cho {changed}/{len(rows)} đoạn")
+
+
+@app.command()
+def cleanup(
+    dry_run: bool = typer.Option(False, "--dry-run", help="Chỉ đếm, không xoá"),
+) -> None:
+    """Dọn proxy/project/video cũ dưới DATA_DIR theo cấu hình CLEANUP_*_DAYS."""
+    from autoclip.ops import cleanup as run_cleanup
+
+    report = run_cleanup(get_settings(), dry_run=dry_run)
+    typer.echo(
+        f"{'Sẽ xoá' if dry_run else 'Đã xoá'} {report.deleted} mục, "
+        f"{report.mb_freed:.1f} MB — {report.details}"
+    )
+    for error in report.errors:
+        typer.echo(f"  lỗi: {error}", err=True)
+
+
+@app.command()
+def disk() -> None:
+    """In dung lượng các ổ đang theo dõi và cảnh báo nếu dưới ngưỡng."""
+    from autoclip.ops import disk_status
+
+    s = get_settings()
+    for info in disk_status(s):
+        status = "SẮP ĐẦY" if info.low else "ok"
+        extra = f" — {info.error}" if info.error else ""
+        typer.echo(f"{info.path}: còn {info.free_gb}/{info.total_gb} GB ({status}){extra}")
 
 
 @app.command("concat-tools")

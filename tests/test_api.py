@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import os
 import time
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -16,10 +19,11 @@ class FakeResult:
 @pytest.fixture
 def client(tmp_path, monkeypatch):
     monkeypatch.setenv("DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("FB_PAGE_ID", "123456")
     get_settings.cache_clear()
     calls = []
 
-    def fake_run(spec, count, *, seed, use_llm, progress):
+    def fake_run(spec, count, *, seed, use_llm, progress, workers=None):
         calls.append((spec.name, count, seed, use_llm))
         time.sleep(0.2)
         return FakeResult()
@@ -123,6 +127,119 @@ def test_custom_style_crud(client):
     assert client.delete("/api/recipes/hook-3cut-caption.json").status_code == 400
     assert client.delete(f"/api/recipes/{made['file']}").status_code == 200
     assert "fade" in client.get("/api/recipes/options").json()["transitions"]
+
+
+def test_facebook_settings_are_secret(tmp_path, monkeypatch):
+    env = tmp_path / ".env"
+    env.write_text("# giữ chú thích\nLLM_PROVIDER=none\n", encoding="utf-8")
+    monkeypatch.setenv("DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("FB_PAGE_ID", "123456")
+    get_settings.cache_clear()
+    with TestClient(create_app(env_file=env)) as c:
+        r = c.put(
+            "/api/settings",
+            json={"fb_page_id": "123456", "fb_token": "EAAB-bi-mat"},
+        )
+        assert r.status_code == 200
+        body = r.json()
+        assert body["fb_page_id"] == "123456" and body["has_fb_token"] is True
+        assert "EAAB-bi-mat" not in r.text
+        text = env.read_text(encoding="utf-8")
+        assert "FB_PAGE_ID=123456" in text and "EAAB-bi-mat" not in text
+        from autoclip.publish import facebook_token
+
+        assert facebook_token(get_settings()) == "EAAB-bi-mat"
+        assert c.get("/api/settings").json()["has_fb_token"] is True
+    get_settings.cache_clear()
+
+
+def test_publish_and_metrics_api(client):
+    from sqlalchemy.orm import Session
+
+    from autoclip.db import make_engine
+    from autoclip.db.models import Job, Recipe, Render
+
+    settings = get_settings()
+    out = settings.out_dir / "v1.mp4"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_bytes(b"mp4")
+    engine = make_engine()
+    with Session(engine, expire_on_commit=False) as db:
+        recipe = Recipe(
+            name="hook-3cut-caption", aspect="9:16", duration_target=[15, 30], spec={}
+        )
+        db.add(recipe)
+        db.flush()
+        job = Job(recipe_id=recipe.id, seed=1, status="done")
+        db.add(job)
+        db.flush()
+        render = Render(job_id=job.id, output_path=str(out), title="Bài thử")
+        db.add(render)
+        db.commit()
+        rid = render.id
+    engine.dispose()
+
+    assert (
+        client.post(f"/api/renders/{rid}/publish", json={}).status_code == 400
+    )  # chưa có token
+    from autoclip.publish import save_facebook_token
+
+    save_facebook_token(settings, "token-thu")
+    r = client.post(f"/api/renders/{rid}/publish", json={})
+    assert r.status_code == 202 and r.json()["status"] == "scheduled"
+    pubs = client.get("/api/publications").json()
+    assert pubs[0]["render_id"] == rid and pubs[0]["status"] == "scheduled"
+
+    r = client.post("/api/metrics/import", json={"csv": "video,views\nv1.mp4,1234\n"})
+    assert r.status_code == 200 and r.json()["imported"] == 1
+    recipes = client.get("/api/recipes").json()
+    row = next(x for x in recipes if x["file"] == "hook-3cut-caption.json")
+    assert row["avg_views"] == 1234 and row["priority"] == 1
+
+    r = client.post(
+        "/api/batches",
+        json={"recipe": "auto", "count": 1, "llm": False},
+    )
+    assert r.status_code == 202
+    assert client.calls[-1][0] == "hook-3cut-caption"
+
+
+def test_schedules_and_system_api(client):
+    at = (datetime.now(UTC) + timedelta(hours=1)).isoformat()
+    r = client.post(
+        "/api/schedules",
+        json={"recipe": "hook-3cut-caption.json", "count": 2, "at": at, "repeat_minutes": 60},
+    )
+    assert r.status_code == 201, r.text
+    sid = r.json()["id"]
+    assert r.json()["enabled"] is True and r.json()["repeat_minutes"] == 60
+    rows = client.get("/api/schedules").json()
+    assert len(rows) == 1 and rows[0]["id"] == sid
+    assert client.post(f"/api/schedules/{sid}/toggle", json={"enabled": False}).status_code == 200
+    assert client.get("/api/schedules").json()[0]["enabled"] is False
+    assert client.delete(f"/api/schedules/{sid}").status_code == 200
+    assert client.get("/api/schedules").json() == []
+    assert client.post("/api/schedules", json={"recipe": "nope", "at": at}).status_code == 404
+
+    system = client.get("/api/system").json()
+    assert system["disk"] and "free_gb" in system["disk"][0]
+    assert system["cleanup"]["videos_days"] == 30
+
+
+def test_cleanup_api_keeps_recent_files(client):
+    data = Path(get_settings().data_dir)
+    old = data / "proxies" / "old.mp4"
+    new = data / "proxies" / "new.mp4"
+    for path in (old, new):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"x")
+    old_time = (datetime.now(UTC) - timedelta(days=40)).timestamp()
+    os.utime(old, (old_time, old_time))
+
+    preview = client.post("/api/system/cleanup", json={"dry_run": True}).json()
+    assert preview["details"]["proxies"] == 1 and old.exists()
+    done = client.post("/api/system/cleanup", json={}).json()
+    assert done["deleted"] == 1 and not old.exists() and new.exists()
 
 
 def test_review_edit_title_and_export(client, tmp_path):

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -78,6 +80,37 @@ def test_batch_no_repeat_and_db_rows(env):
         assert s.scalar(select(func.count()).select_from(UsageLog)) == sum(len(x) for x in sets)
     # batch sau tránh segment của các render gần đây
     assert recent_segment_ids(engine, 50) == set().union(*sets)
+
+
+def test_batch_parallel_workers(env):
+    _, tmp_path = env
+    lock = threading.Lock()
+    active = peak = 0
+
+    def slow_render(spec, plan):
+        nonlocal active, peak
+        with lock:
+            active += 1
+            peak = max(peak, active)
+        time.sleep(0.15)
+        out = tmp_path / f"out-{plan.seed}.mp4"
+        out.write_bytes(b"video")
+        with lock:
+            active -= 1
+        return RenderResult(output=out, plan=plan, video_sec=16.0, render_sec=1.0, commands=40)
+
+    r = run_batch(
+        load_recipe(RECIPE),
+        3,
+        seed=1,
+        use_llm=False,
+        workers=2,
+        render_fn=slow_render,
+        qa_fn=ok_qa,
+    )
+    assert len(r.done) == 3 and peak == 2
+    sets = [{i.segment_id for i in d.plan.items} for d in r.done]
+    assert all(not (a & b) for k, a in enumerate(sets) for b in sets[k + 1 :])
 
 
 def test_batch_stops_when_pool_exhausted(env):
