@@ -21,7 +21,17 @@ hiddenimports = (
     + collect_submodules("yt_dlp")
     + ["sqlalchemy.dialects.sqlite"]
 )
-for package in ("faster_whisper", "ctranslate2", "av", "scenedetect", "mcp", "imagehash", "tokenizers"):
+for package in (
+    "faster_whisper",
+    "ctranslate2",
+    "av",
+    "scenedetect",
+    "mcp",
+    "imagehash",
+    "tokenizers",
+    "sherpa_onnx",
+    "onnxruntime",
+):
     d, b, h = collect_all(package)
     datas += d
     binaries += b
