@@ -40,6 +40,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from autoclip.brand import BrandKit
 from autoclip.config import ENV_FILE, Settings, get_settings
 from autoclip.contracts import RecipeSpec
 from autoclip.db import make_engine
@@ -231,7 +232,7 @@ class BatchRunner:
                         qa_notes="; ".join(qa.notes) or None,
                         duration=rendered.video_sec,
                         size_bytes=rendered.output.stat().st_size,
-                        **render_fields(plan, rendered),
+                        **render_fields(rendered.plan, rendered),
                     )
                 )
                 job.status = "done"
@@ -642,6 +643,24 @@ def create_app(
                 done.append(stem)
             db.commit()
         return {"folder": str(dest), "count": len(done), "files": done}
+
+    @app.get("/api/brand")
+    def read_brand() -> dict[str, Any]:
+        from autoclip.brand import load_brand, music_tracks
+
+        kit = load_brand(get_settings().data_dir)
+        return {**kit.model_dump(), "music_count": len(music_tracks(kit.music_folder))}
+
+    @app.put("/api/brand")
+    def write_brand(kit: BrandKit) -> dict[str, Any]:
+        from autoclip.brand import save_brand
+
+        if kit.logo_path and not Path(kit.logo_path).is_file():
+            raise HTTPException(400, f"không thấy file logo {kit.logo_path}")
+        if kit.music_folder and not Path(kit.music_folder).is_dir():
+            raise HTTPException(400, f"không thấy thư mục nhạc {kit.music_folder}")
+        save_brand(get_settings().data_dir, kit)
+        return read_brand()
 
     @app.get("/", response_class=HTMLResponse)
     def dashboard() -> HTMLResponse:

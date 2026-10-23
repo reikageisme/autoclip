@@ -407,6 +407,7 @@ def compile_plan(spec: RecipeSpec, plan: RenderPlan) -> list[ConcatCommand]:
                 )
             )
 
+    commands.extend(_brand_commands(params, total, width, height))
     return commands
 
 
@@ -414,3 +415,133 @@ def _is_caption(text: Any) -> bool:
     kind = str(_get(text, "kind", "") or "").lower()
     style = str(_get(text, "style", "") or "").lower()
     return kind == "captions" or style in {"caption", "word-pop"}
+
+
+_CORNERS = {
+    "top-left": (-1, -1),
+    "top-right": (1, -1),
+    "bottom-left": (-1, 1),
+    "bottom-right": (1, 1),
+}
+
+
+def _brand_commands(
+    params: dict[str, Any], total: float, width: int, height: int
+) -> list[ConcatCommand]:
+    """Logo, cảnh kết CTA, nhạc nền từ ``params["brand"]`` (xem autoclip.brand)."""
+    brand = params.get("brand") or {}
+    out: list[ConcatCommand] = []
+    outro = brand.get("outro")
+    end = total + (float(outro["seconds"]) if outro else 0.0)
+
+    if outro:
+        # Sau cảnh cuối không còn hình: nền timeline hiện màu thương hiệu.
+        out.append(
+            _command(
+                "timeline_background",
+                {
+                    "timelineId": "@timeline",
+                    "background": {"kind": "color", "color": outro["background"]},
+                },
+                params,
+            )
+        )
+        out.append(
+            _command(
+                "title_add",
+                {
+                    "start": round(total, 3),
+                    "duration": round(float(outro["seconds"]), 3),
+                    "style": {
+                        "content": outro["text"],
+                        "fontWeight": 800,
+                        "fontSize": 0.04,
+                        "maxWidth": 0.92,
+                        "color": outro["color"],
+                    },
+                    "offsetY": 0.0,
+                    "above": True,
+                },
+                params,
+            )
+        )
+
+    logo = brand.get("logo")
+    if logo:
+        size = float(logo["size"])
+        sx, sy = _CORNERS.get(logo["corner"], (1, -1))
+        margin = 0.04
+        # scale 1 = vừa khung (logo vuông vừa bề ngang): cao logo theo tỉ lệ khung
+        half_w = size / 2
+        half_h = size * (width / height) / 2
+        out += [
+            _command("media_import", {"file": logo["path"]}, params),
+            _command("track_add", {"@as": "track:logo"}, params),
+            _command(
+                "clip_add",
+                {
+                    "mediaId": f"@media:{logo['path']}",
+                    "trackId": "@track:logo",
+                    "start": 0,
+                    "@as": "clip:logo",
+                },
+                params,
+            ),
+            _command(
+                "clip_trim",
+                {"clipId": "@clip:logo", "edge": "end", "delta": round(end - 5.0, 3)},
+                params,
+            ),
+            _command(
+                "clip_transform",
+                {
+                    "clipId": "@clip:logo",
+                    "scale": round(size, 4),
+                    "offsetX": round(sx * (0.5 - half_w - margin), 4),
+                    "offsetY": round(sy * (0.5 - half_h - margin), 4),
+                },
+                params,
+            ),
+            _command(
+                "clip_update",
+                {"clipId": "@clip:logo", "patch": {"opacity": float(logo["opacity"])}},
+                params,
+            ),
+        ]
+
+    music = brand.get("music")
+    if music:
+        length = float(music["duration"])
+        out += [
+            _command("media_import", {"file": music["path"]}, params),
+            _command("track_add", {"bottom": True, "@as": "track:music"}, params),
+            _command(
+                "clip_add",
+                {
+                    "mediaId": f"@media:{music['path']}",
+                    "trackId": "@track:music",
+                    "start": 0,
+                    "@as": "clip:music",
+                },
+                params,
+            ),
+        ]
+        if length > end + 0.05:
+            out.append(
+                _command(
+                    "clip_trim",
+                    {"clipId": "@clip:music", "edge": "end", "delta": round(end - length, 3)},
+                    params,
+                )
+            )
+        out.append(
+            _command(
+                "clip_update",
+                {
+                    "clipId": "@clip:music",
+                    "patch": {"volume": float(music["volume"]), "fadeIn": 0.5, "fadeOut": 1.5},
+                },
+                params,
+            )
+        )
+    return out

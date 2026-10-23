@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
+from autoclip.brand import apply_brand, load_brand
 from autoclip.concat_client import SyncConcatClient
 from autoclip.concat_client.executor import execute, export_mp4
 from autoclip.config import Settings, get_settings
@@ -64,6 +65,7 @@ def render(
     s.out_dir.mkdir(parents=True, exist_ok=True)
     project = str(s.projects_dir / name)
     output = s.out_dir / f"{name}.mp4"
+    plan = apply_brand(plan, load_brand(s.data_dir))
     commands = compile_plan(spec, plan)
 
     with SyncConcatClient(s) as cc:

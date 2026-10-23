@@ -2,6 +2,8 @@
 
 Quy ước (xem docstring của autoclip.recipes.compiler):
 - Giá trị ``"@media:<file>"`` → ``createdId`` của lệnh ``media_import`` file đó.
+- ``"@track:<tên>"`` / ``"@clip:<tên>"`` → ``createdId`` của lệnh có ``"@as"`` tương ứng.
+- ``"@timeline"`` → id timeline đang mở (đọc bằng ``timeline_read`` khi cần).
 - Giá trị ``"@clip:<i>"`` → ``createdId`` của lệnh có ``"@as": "clip:<i>"``.
 - Khoá bắt đầu bằng ``@`` là chỉ thị, không gửi tới Concat.
 - Tool có tham số ``path`` mà lệnh chưa có → chèn thư mục project.
@@ -9,6 +11,7 @@ Quy ước (xem docstring của autoclip.recipes.compiler):
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any, Protocol
 
@@ -25,7 +28,9 @@ class _Client(Protocol):
 
 
 def _resolve(value: Any, refs: dict[str, str], tool: str) -> Any:
-    if isinstance(value, str) and value.startswith(("@media:", "@clip:")):
+    if isinstance(value, str) and (
+        value.startswith(("@media:", "@clip:", "@track:")) or value == "@timeline"
+    ):
         key = value[1:]
         if key not in refs:
             raise ConcatError(tool, f"tham chiếu chưa có id: {value}")
@@ -48,6 +53,9 @@ def execute(cc: _Client, commands: list[ConcatCommand], project_path: str) -> di
     for n, command in enumerate(commands):
         alias = command.args.get("@as")
         args = {k: v for k, v in command.args.items() if not k.startswith("@")}
+        if "timeline" not in refs and '"@timeline"' in json.dumps(args):
+            read = cc.call_tool("timeline_read", {"path": project_path})
+            refs["timeline"] = str(read["timeline"]["id"])
         args = _resolve(args, refs, command.tool)
         if "path" not in args and _takes_path(cc, command.tool):
             args["path"] = project_path

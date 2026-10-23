@@ -193,7 +193,7 @@ def run_batch(
                     qa_notes="; ".join(qa.notes) or None,
                     duration=rendered.video_sec,
                     size_bytes=rendered.output.stat().st_size,
-                    **render_fields(plan, rendered),
+                    **render_fields(rendered.plan, rendered),
                 )
                 db.add(row)
                 db.flush()
