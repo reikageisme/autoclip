@@ -1,0 +1,79 @@
+{
+  "name": "highlight-ngan",
+  "label": "Highlight ngắn",
+  "description": "10–15 giây, cắt nhanh, chỉ có headline — hợp để teaser.",
+  "aspect": "9:16",
+  "duration_target": [
+    10,
+    15
+  ],
+  "music": {
+    "mode": "source",
+    "beat_sync": false
+  },
+  "slots": [
+    {
+      "role": "hook",
+      "dur": [
+        1.2,
+        2.0
+      ],
+      "want_tags": [
+        "speech",
+        "action"
+      ],
+      "speed": [
+        1.0,
+        1.15
+      ]
+    },
+    {
+      "role": "body",
+      "repeat": [
+        4,
+        6
+      ],
+      "dur": [
+        1.2,
+        2.0
+      ],
+      "transition": [
+        "cut",
+        "zoom",
+        "whip"
+      ]
+    },
+    {
+      "role": "outro",
+      "dur": [
+        1.2,
+        2.0
+      ],
+      "want_tags": [
+        "speech"
+      ]
+    }
+  ],
+  "texts": [
+    {
+      "slot": "hook",
+      "kind": "headline",
+      "style": "bold-stroke",
+      "pos": [
+        0.5,
+        0.2
+      ],
+      "source": "transcript"
+    }
+  ],
+  "variation": {
+    "palette": [
+      "#FFD400",
+      "#FFFFFF"
+    ],
+    "fonts": [],
+    "shuffle_body": true
+  },
+  "source_project": null,
+  "unmapped": []
+}

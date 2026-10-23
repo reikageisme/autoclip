@@ -1,0 +1,89 @@
+{
+  "name": "gioi-thieu-dich-vu",
+  "label": "Giới thiệu dịch vụ",
+  "description": "20–35 giây, nhịp vừa, headline + phụ đề + kêu gọi liên hệ ở cuối.",
+  "aspect": "9:16",
+  "duration_target": [
+    20,
+    35
+  ],
+  "music": {
+    "mode": "source",
+    "beat_sync": false
+  },
+  "slots": [
+    {
+      "role": "hook",
+      "dur": [
+        2.5,
+        4.0
+      ],
+      "want_tags": [
+        "speech",
+        "action"
+      ],
+      "speed": [
+        1.0,
+        1.05
+      ]
+    },
+    {
+      "role": "body",
+      "repeat": [
+        4,
+        6
+      ],
+      "dur": [
+        2.5,
+        4.0
+      ],
+      "transition": [
+        "cut",
+        "slide",
+        "zoom"
+      ]
+    },
+    {
+      "role": "outro",
+      "dur": [
+        2.5,
+        4.0
+      ],
+      "want_tags": [
+        "speech"
+      ]
+    }
+  ],
+  "texts": [
+    {
+      "slot": "hook",
+      "kind": "headline",
+      "style": "bold-stroke",
+      "pos": [
+        0.5,
+        0.2
+      ],
+      "source": "transcript"
+    },
+    {
+      "kind": "captions",
+      "source": "whisper",
+      "style": "word-pop",
+      "pos": [
+        0.5,
+        0.78
+      ]
+    }
+  ],
+  "variation": {
+    "palette": [
+      "#FFD400",
+      "#FFFFFF",
+      "#00E5FF"
+    ],
+    "fonts": [],
+    "shuffle_body": true
+  },
+  "source_project": null,
+  "unmapped": []
+}

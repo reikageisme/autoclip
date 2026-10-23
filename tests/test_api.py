@@ -104,3 +104,21 @@ def test_settings_roundtrip_keeps_key_and_comments(tmp_path, monkeypatch):
 def test_ingest_rejects_missing_folder(client, tmp_path):
     assert client.post("/api/ingest", json={"folder": str(tmp_path / "nope")}).status_code == 404
     assert client.get("/api/clips").json() == []
+
+
+def test_custom_style_crud(client):
+    form = {
+        "label": "Thử nghiệm",
+        "duration_min": 12,
+        "duration_max": 20,
+        "transitions": ["cut", "fade"],
+    }
+    r = client.post("/api/recipes", json=form)
+    assert r.status_code == 201, r.text
+    made = r.json()
+    assert made["builtin"] is False and made["label"] == "Thử nghiệm" and "est_videos" in made
+    files = {x["file"]: x for x in client.get("/api/recipes").json()}
+    assert made["file"] in files and files["hook-3cut-caption.json"]["builtin"] is True
+    assert client.delete("/api/recipes/hook-3cut-caption.json").status_code == 400
+    assert client.delete(f"/api/recipes/{made['file']}").status_code == 200
+    assert "fade" in client.get("/api/recipes/options").json()["transitions"]

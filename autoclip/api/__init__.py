@@ -45,6 +45,7 @@ from autoclip.db import make_engine
 from autoclip.db.migrate import upgrade
 from autoclip.db.models import Clip, Job, Recipe, Render, Segment
 from autoclip.diversity import recent_segment_ids
+from autoclip.styles import TRANSITIONS, StyleForm, Styles, estimate_videos, spec_to_form
 
 log = logging.getLogger(__name__)
 
@@ -253,18 +254,26 @@ def create_app(
     engine = make_engine()
     upgrade(engine)
     runner = runner or BatchRunner()
-    recipes_dir = REPO_ROOT / "recipes"
     env_path = env_file or ENV_FILE
-    app = FastAPI(title="AutoClip", version="0.2")
+    app = FastAPI(title="AutoClip", version="0.3")
     app.state.runner = runner
 
-    def load_spec(name: str):
-        from autoclip.render import load_recipe
+    def styles() -> Styles:
+        return Styles(get_settings().data_dir / "recipes")
 
-        path = (recipes_dir / name).resolve()
-        if path.parent != recipes_dir.resolve() or path.suffix != ".json" or not path.is_file():
-            raise HTTPException(404, f"không có recipe {name}")
-        return load_recipe(path)
+    def load_spec(name: str):
+        spec = styles().load(name)
+        if spec is None:
+            raise HTTPException(404, f"không có kiểu video {name}")
+        return spec
+
+    def pool_stats() -> tuple[int, float | None]:
+        """(số đoạn còn dùng được, độ dài trung bình của chúng)."""
+        recent = recent_segment_ids(engine, get_settings().no_repeat_last_n_renders)
+        with Session(engine) as db:
+            rows = db.execute(select(Segment.id, Segment.start, Segment.end)).all()
+        free = [e - st for sid, st, e in rows if sid not in recent and e - st >= 0.8]
+        return len(free), (sum(free) / len(free) if free else None)
 
     @app.get("/api/health")
     def health() -> dict[str, Any]:
@@ -272,23 +281,45 @@ def create_app(
 
     @app.get("/api/recipes")
     def recipes() -> list[dict[str, Any]]:
+        available, avg = pool_stats()
         out = []
-        for f in sorted(recipes_dir.glob("*.json")):
-            try:
-                spec = load_spec(f.name)
-            except Exception as exc:  # recipe hỏng vẫn liệt kê để người dùng thấy
-                out.append({"file": f.name, "error": str(exc)})
+        for file, spec, builtin, error in styles().list():
+            if spec is None:
+                out.append({"file": file, "builtin": builtin, "error": error})
                 continue
             out.append(
                 {
-                    "file": f.name,
+                    "file": file,
                     "name": spec.name,
+                    "label": spec.label or spec.name,
+                    "description": spec.description or "",
+                    "builtin": builtin,
                     "aspect": spec.aspect,
                     "duration_target": list(spec.duration_target),
                     "slots": [sl.role for sl in spec.slots],
+                    "est_videos": estimate_videos(spec, available, avg),
+                    "form": spec_to_form(spec).model_dump(),
                 }
             )
         return out
+
+    @app.get("/api/recipes/options")
+    def recipe_options() -> dict[str, Any]:
+        return {"transitions": TRANSITIONS}
+
+    @app.post("/api/recipes", status_code=201)
+    def save_recipe(form: StyleForm, file: str | None = None) -> dict[str, Any]:
+        """Lưu kiểu tự tạo. Có `file` của kiểu tự tạo → cập nhật; kiểu có sẵn → tạo bản sao."""
+        saved = styles().save(form, file)
+        return next(r for r in recipes() if r["file"] == saved)
+
+    @app.delete("/api/recipes/{file}")
+    def delete_recipe(file: str) -> dict[str, Any]:
+        if styles().is_builtin(file):
+            raise HTTPException(400, "kiểu có sẵn không xoá được")
+        if not styles().delete(file):
+            raise HTTPException(404, f"không có kiểu {file}")
+        return {"deleted": file}
 
     @app.get("/api/pool")
     def pool() -> dict[str, Any]:

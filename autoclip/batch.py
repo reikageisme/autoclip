@@ -148,10 +148,18 @@ def run_batch(
                     else:
                         plan = planner.plan(spec, pool, plan_seed, exclude)
                 except PlanError as exc:
-                    job.status, job.error = "failed", str(exc)
-                    db.commit()
-                    item.status, item.error = "failed", str(exc)
-                    result.stopped_reason = f"hết segment sau {len(result.done)} video: {exc}"
+                    result.stopped_reason = (
+                        f"Kho clip đã dùng hết sau {len(result.done)} video — nhập thêm clip nguồn"
+                    )
+                    if attempt == 0:
+                        # Chưa dựng gì: không để lại một job "lỗi" trong hàng đợi.
+                        db.delete(job)
+                        db.commit()
+                        item = None
+                    else:
+                        job.status, job.error = "failed", str(exc)
+                        db.commit()
+                        item.status, item.error = "failed", str(exc)
                     break
                 try:
                     rendered = render_fn(spec, plan)
@@ -200,9 +208,10 @@ def run_batch(
                 job.status = "failed"
                 db.commit()
 
-            result.items.append(item)
-            if progress:
-                progress(item)
+            if item is not None:
+                result.items.append(item)
+                if progress:
+                    progress(item)
             if result.stopped_reason:
                 break
     engine.dispose()

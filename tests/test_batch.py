@@ -85,7 +85,8 @@ def test_batch_stops_when_pool_exhausted(env):
     spec = load_recipe(RECIPE)
     r = run_batch(spec, 20, seed=1, use_llm=False, render_fn=fake_render(tmp_path), qa_fn=ok_qa)
     assert 0 < len(r.done) < 20
-    assert r.stopped_reason and "hết segment" in r.stopped_reason
+    assert r.stopped_reason and "dùng hết" in r.stopped_reason
+    assert all(i.status == "done" for i in r.items)  # không có job "lỗi" vì hết kho
 
 
 def test_batch_retries_when_qa_fails(env):

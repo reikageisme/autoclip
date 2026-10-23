@@ -163,6 +163,10 @@ class RecipeSpec(_Model):
     """Nội dung recipe.json."""
 
     name: str
+    """Mã kiểu (chữ thường, không dấu) — dùng làm tên file và trong DB."""
+    label: str | None = None
+    """Tên hiển thị cho người dùng, ví dụ "Hook nhanh · có phụ đề"."""
+    description: str | None = None
     aspect: str = "9:16"
     duration_target: Range
     music: MusicSpec = Field(default_factory=MusicSpec)
