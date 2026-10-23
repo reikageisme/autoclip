@@ -206,3 +206,42 @@ def check_resolution(
         return CheckResult("resolution", passed, 1.0 if passed else 0.0, detail)
     result = check_aspect(width, height, aspect, tolerance=tolerance)
     return CheckResult("resolution", result.passed, result.score, result.detail)
+
+
+_BLACK_RE = re.compile(r"black_start:([\d.]+) black_end:([\d.]+)")
+
+
+def check_black_spans(
+    path: str | Path,
+    min_sec: float = 0.15,
+    pixel_threshold: float = 0.08,
+    timeout: float = 120.0,
+) -> CheckResult:
+    """Dò mọi đoạn đen ≥ ``min_sec`` trên toàn video (ffmpeg blackdetect).
+
+    Lấy mẫu vài frame dễ bỏ sót một đoạn đen ngắn giữa video (ví dụ transition render
+    hỏng); blackdetect quét hết từng frame.
+    """
+    command = [
+        os.environ.get("FFMPEG_BIN") or shutil.which("ffmpeg") or "ffmpeg",
+        "-nostdin",
+        "-hide_banner",
+        "-i",
+        str(path),
+        "-an",
+        "-vf",
+        f"blackdetect=d={min_sec}:pix_th={pixel_threshold}",
+        "-f",
+        "null",
+        "-",
+    ]
+    try:
+        completed = subprocess.run(command, capture_output=True, text=True, timeout=timeout)
+    except (OSError, subprocess.SubprocessError) as exc:
+        return CheckResult("black_spans", True, 1.0, f"skipped: {exc}")
+    spans = [(float(a), float(b)) for a, b in _BLACK_RE.findall(completed.stderr or "")]
+    if not spans:
+        return CheckResult("black_spans", True, 1.0, "no black spans")
+    total = sum(b - a for a, b in spans)
+    detail = "black " + ", ".join(f"{a:.2f}-{b:.2f}s" for a, b in spans)
+    return CheckResult("black_spans", False, max(0.0, 1.0 - total), detail)

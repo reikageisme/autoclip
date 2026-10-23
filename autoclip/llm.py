@@ -111,9 +111,14 @@ class LLMClient:
             {"Authorization": f"Bearer {self.api_key}"},
         )
         try:
-            return data["choices"][0]["message"]["content"] or ""
+            choice = data["choices"][0]
+            content = choice["message"].get("content") or ""
         except (KeyError, IndexError, TypeError) as exc:
             raise LLMError(f"phản hồi lạ: {str(data)[:300]}") from exc
+        if not content.strip():
+            # model suy luận (reasoning) có thể tiêu hết max_tokens trước khi trả lời
+            raise LLMError(f"nội dung rỗng (finish_reason={choice.get('finish_reason')})")
+        return content
 
     def _anthropic(self, prompt: str, image: str | None, max_tokens: int) -> str:
         content: list[dict[str, Any]] = []

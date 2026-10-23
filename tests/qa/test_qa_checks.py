@@ -72,3 +72,46 @@ def test_check_resolution() -> None:
     assert check_resolution(360, 640, expected=(360, 640)).passed is True
     assert check_resolution(720, 1280, expected=(360, 640)).passed is False
     assert check_resolution(360, 640, aspect="9:16").passed is True
+
+
+def test_check_black_spans_finds_black_in_middle(tmp_path) -> None:
+    import shutil
+    import subprocess
+
+    import pytest
+
+    from autoclip.qa.checks import check_black_spans
+
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg:
+        pytest.skip("ffmpeg required")
+    out = tmp_path / "gap.mp4"
+    subprocess.run(
+        [
+            ffmpeg,
+            "-v",
+            "error",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=size=160x284:rate=30:duration=1",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=black:size=160x284:rate=30:duration=0.5",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=size=160x284:rate=30:duration=1",
+            "-filter_complex",
+            "[0][1][2]concat=n=3:v=1:a=0",
+            "-pix_fmt",
+            "yuv420p",
+            str(out),
+        ],
+        check=True,
+    )
+    result = check_black_spans(out)
+    assert not result.passed
+    assert "1.0" in result.detail

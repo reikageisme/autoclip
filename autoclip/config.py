@@ -46,6 +46,8 @@ class Settings(BaseSettings):
 
     # --- Ingest ---
     min_scene_sec: float = 0.8
+    max_scene_sec: float = 6.0
+    """Cảnh dài hơn bị chia đều; 0 = giữ nguyên."""
     scene_threshold: float = 27.0
     frames_per_segment: int = 3
     whisper_enabled: bool = True

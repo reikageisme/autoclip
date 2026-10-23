@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import math
 from collections.abc import Iterable, Sequence
 from pathlib import Path
 
@@ -66,6 +67,22 @@ def merge_short_scenes(
         else:
             merged.append((start, end))
     return merged
+
+
+def split_long_scenes(
+    scenes: Sequence[tuple[float, float]], max_scene_sec: float
+) -> list[tuple[float, float]]:
+    """Chia cảnh dài hơn ``max_scene_sec`` thành các đoạn đều nhau (0 = không chia)."""
+    if max_scene_sec <= 0:
+        return list(scenes)
+    out: list[tuple[float, float]] = []
+    for start, end in scenes:
+        parts = max(1, math.ceil((end - start) / max_scene_sec - 1e-9))
+        step = (end - start) / parts
+        out.extend(
+            (round(start + i * step, 3), round(start + (i + 1) * step, 3)) for i in range(parts)
+        )
+    return out
 
 
 def _seconds(timecode: object) -> float:

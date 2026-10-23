@@ -52,3 +52,16 @@ def test_detect_scenes_on_color_cuts(media_files: dict[str, Path]) -> None:
     assert scenes[-1][1] == pytest.approx(3.0, abs=0.3)
     for start, end in scenes:
         assert end > start
+
+
+def test_split_long_scenes() -> None:
+    from autoclip.ingest.scenes import split_long_scenes
+
+    assert split_long_scenes([(0.0, 4.0), (4.0, 17.0)], 6.0) == [
+        (0.0, 4.0),
+        (4.0, 8.333),
+        (8.333, 12.667),
+        (12.667, 17.0),
+    ]
+    assert split_long_scenes([(0.0, 12.0)], 6.0) == [(0.0, 6.0), (6.0, 12.0)]
+    assert split_long_scenes([(0.0, 20.0)], 0) == [(0.0, 20.0)]

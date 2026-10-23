@@ -14,7 +14,7 @@ from autoclip.contracts import ClipInfo, ClipRepository, IngestError, IngestRepo
 from .dedupe import dedupe_segments, phash_from_frames
 from .frames import sample_frames
 from .probe import ProbeError, probe
-from .scenes import detect_scenes
+from .scenes import detect_scenes, split_long_scenes
 from .tagging import HeuristicTagger, Tagger, TagResult, VisionLLMTagger
 from .thumbs import ThumbnailError, make_thumbnail
 from .transcribe import Transcriber
@@ -44,6 +44,7 @@ class IngestOptions:
     """Runtime knobs for :func:`ingest_folder` (all have safe defaults)."""
 
     min_scene_sec: float = 0.8
+    max_scene_sec: float = 6.0
     scene_threshold: float = 27.0
     whisper_enabled: bool = True
     whisper_model: str = "small"
@@ -69,6 +70,7 @@ class IngestOptions:
         """Options từ ``autoclip.config.Settings`` — nguồn cấu hình duy nhất."""
         return cls(
             min_scene_sec=settings.min_scene_sec,
+            max_scene_sec=settings.max_scene_sec,
             scene_threshold=settings.scene_threshold,
             whisper_enabled=settings.whisper_enabled,
             whisper_model=settings.whisper_model,
@@ -207,6 +209,7 @@ def ingest_folder(
                 logger.exception("scene detection failed for %s; using whole clip", path)
                 bounds = [(0.0, float(info.duration))] if info.duration > 0 else []
 
+            bounds = split_long_scenes(bounds, opts.max_scene_sec)
             transcripts = speech.transcripts_for(path, bounds)
             if speech.last_error:
                 report.errors.append(

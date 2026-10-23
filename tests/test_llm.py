@@ -71,3 +71,15 @@ def test_vision_off_without_vision_model():
 def test_unconfigured_raises():
     with pytest.raises(LLMError):
         LLMClient("none", None).chat("x")
+
+
+def test_empty_content_is_an_error(monkeypatch):
+    """Model suy luận hết max_tokens trả content rỗng → phải báo lỗi, không coi là trả lời."""
+    client = LLMClient("openai_compat", "m", base_url="http://x/v1", api_key="k")
+    monkeypatch.setattr(
+        client,
+        "_post",
+        lambda *a, **k: {"choices": [{"message": {"content": ""}, "finish_reason": "length"}]},
+    )
+    with pytest.raises(LLMError, match="finish_reason=length"):
+        client.chat("x")

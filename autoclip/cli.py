@@ -102,8 +102,9 @@ def render(
     recipe: Path = typer.Option(..., "--recipe", "-r", exists=True, help="File recipe.json"),
     seed: int = typer.Option(None, help="Seed (mặc định ngẫu nhiên); cùng seed → cùng plan"),
     count: int = typer.Option(1, help="Số video (seed, seed+1, ...)"),
+    llm: bool = typer.Option(False, "--llm/--no-llm", help="Dùng LLM planner (LLM_MODEL)"),
 ) -> None:
-    """Dựng video từ recipe + segment trong DB qua Concat headless (planner thô, chưa LLM)."""
+    """Dựng video từ recipe + segment trong DB qua Concat headless (không ghi job/QA)."""
     import random
 
     from autoclip.db import SqlClipRepository, make_engine
@@ -114,12 +115,54 @@ def render(
     repo = SqlClipRepository(make_engine())
     base = seed if seed is not None else random.randrange(1_000_000)
     for n in range(count):
-        plan = build_plan(spec, repo, base + n)
+        plan = build_plan(spec, repo, base + n, use_llm=llm)
         r = do_render(spec, plan)
         typer.echo(
             f"[seed {plan.seed}] {r.output} | {len(plan.items)} cảnh, {r.video_sec:.1f}s video, "
             f"{r.commands} lệnh, render {r.render_sec:.1f}s ({r.render_sec / r.video_sec:.2f} s/s)"
         )
+
+
+@app.command()
+def batch(
+    recipe: Path = typer.Option(..., "--recipe", "-r", exists=True, help="File recipe.json"),
+    count: int = typer.Option(20, help="Số video cần sinh"),
+    seed: int = typer.Option(None, help="Seed đầu (mặc định ngẫu nhiên)"),
+    llm: bool = typer.Option(True, "--llm/--no-llm", help="LLM planner; tắt = theo tag"),
+) -> None:
+    """Sinh N video khác nhau: planner → render → QA, không lặp segment, ghi job vào DB."""
+    from autoclip.batch import run_batch
+    from autoclip.render import load_recipe
+
+    spec = load_recipe(recipe)
+
+    def show(item) -> None:
+        if item.status == "done":
+            p = item.plan
+            headline = next((t.text for t in p.texts if t.kind != "captions"), "")
+            typer.echo(
+                f"  ✓ job {item.job_id} seed {item.seed} [{p.params.get('planner')}] "
+                f"{item.video_sec:.1f}s QA {item.qa.score:.2f} | {headline}"
+            )
+            typer.echo(f"    {item.output}")
+        else:
+            typer.echo(f"  ✗ job {item.job_id} seed {item.seed}: {item.error}")
+
+    r = run_batch(spec, count, seed=seed, use_llm=llm, progress=show)
+    done = r.done
+    seg_sets = [{i.segment_id for i in d.plan.items} for d in done]
+    overlap = sum(len(a & b) for k, a in enumerate(seg_sets) for b in seg_sets[k + 1 :])
+    total = sum(d.render_sec for d in done)
+    video = sum(d.video_sec for d in done)
+    typer.echo(
+        f"Xong {len(done)}/{r.requested} video, {len(r.items) - len(done)} job lỗi, "
+        f"segment trùng giữa các video: {overlap}, "
+        f"render {total:.0f}s cho {video:.0f}s video"
+    )
+    if r.stopped_reason:
+        typer.echo(f"Dừng sớm: {r.stopped_reason}", err=True)
+    if len(done) < r.requested:
+        raise typer.Exit(1)
 
 
 @app.command()
