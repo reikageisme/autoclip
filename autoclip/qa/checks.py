@@ -230,7 +230,8 @@ def check_black_spans(
         str(path),
         "-an",
         "-vf",
-        f"blackdetect=d={min_sec}:pix_th={pixel_threshold}",
+        # pic_th 0.9: khung đen 90% vẫn tính là đen dù có phụ đề đè lên
+        f"blackdetect=d={min_sec}:pix_th={pixel_threshold}:pic_th=0.9",
         "-f",
         "null",
         "-",

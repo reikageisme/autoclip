@@ -19,7 +19,9 @@ from autoclip.contracts import (
 from autoclip.diversity import Variant
 
 MIN_ITEM_SEC = 0.8
-CAPTION_WORDS = 4
+CAPTION_WORDS = 8
+"""Chữ mỗi phụ đề. Ít clip chữ hơn: Concat render nhiều clip chữ ngắn (≥~14 trong vài giây)
+thì có lúc mất hình bên dưới (khung đen) — gộp phụ đề dài hơn tránh được."""
 HEADLINE_MAX_CHARS = 40
 
 
@@ -63,11 +65,13 @@ def cut(seg: SegmentInfo, want: float, rng: random.Random) -> tuple[float, float
     return start, round(start + length, 3)
 
 
-def _caption_chunks(text: str, start: float, end: float) -> list[RenderText]:
+def _caption_chunks(
+    text: str, start: float, end: float, per: int = CAPTION_WORDS
+) -> list[RenderText]:
     words = text.split()
     if not words:
         return []
-    chunks = [words[i : i + CAPTION_WORDS] for i in range(0, len(words), CAPTION_WORDS)]
+    chunks = [words[i : i + per] for i in range(0, len(words), per)]
     step = (end - start) / len(chunks)
     return [
         RenderText(

@@ -12,6 +12,14 @@
     }
   },
   {
+    "tool": "track_add",
+    "args": {
+      "bottom": true,
+      "@as": "track:video",
+      "path": "D:/work/autoclip/data/tmp/basic"
+    }
+  },
+  {
     "tool": "media_import",
     "args": {
       "file": "C:/media/hook.mp4",
@@ -39,6 +47,7 @@
         "@media:C:/media/hook.mp4"
       ],
       "start": 0.0,
+      "trackId": "@track:video",
       "@as": "clip:0",
       "path": "D:/work/autoclip/data/tmp/basic"
     }
@@ -50,6 +59,7 @@
         "@media:C:/media/body.mp4"
       ],
       "start": 2.0,
+      "trackId": "@track:video",
       "@as": "clip:1",
       "path": "D:/work/autoclip/data/tmp/basic"
     }
@@ -121,6 +131,7 @@
         "@media:C:/media/outro.mp4"
       ],
       "start": 5.077,
+      "trackId": "@track:video",
       "@as": "clip:2",
       "path": "D:/work/autoclip/data/tmp/basic"
     }

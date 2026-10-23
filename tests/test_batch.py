@@ -108,12 +108,12 @@ def test_batch_retries_when_qa_fails(env):
     assert len(r.done) == 1 and calls == [5, 100_005]
 
 
-def test_black_spans_retry_same_plan_without_transitions(env):
+def test_black_spans_retry_with_new_plan(env):
     _, tmp_path = env
     seen = []
 
     def black_then_ok(path, spec, plan):
-        seen.append(plan)
+        seen.append(plan.seed)
         if len(seen) == 1:
             return QAResult(score=0.5, passed=False, notes=["black_spans: black 6.30-7.07s"])
         return QAResult(score=1.0, passed=True, notes=[])
@@ -127,6 +127,4 @@ def test_black_spans_retry_same_plan_without_transitions(env):
         qa_fn=black_then_ok,
     )
     assert len(r.done) == 1
-    first, second = seen
-    assert [i.segment_id for i in first.items] == [i.segment_id for i in second.items]
-    assert all(i.transition is None for i in second.items)
+    assert seen == [9, 100_009]  # lần 2 là plan mới, seed khác

@@ -101,7 +101,7 @@ def plan_voiceover(
         )
         length = (src[1] - src[0]) / speed
         voice.append({"path": str(line.audio), "start": round(cursor, 3)})
-        for t in _caption_chunks(line.text, cursor, cursor + length):
+        for t in _caption_chunks(line.text, cursor, cursor + length, per=10):
             t.pos = (0.5, caption_y(seg, variant.caption_y))
             texts.append(t)
         cursor += length

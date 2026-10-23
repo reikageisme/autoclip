@@ -107,7 +107,7 @@ def test_brand_commands_are_valid_and_complete(tmp_path, music):
         assert not sent - set(TOOLS[c.tool].get("properties", {})), (c.tool, sent)
         assert not set(TOOLS[c.tool].get("required", [])) - sent - {"path"}, (c.tool, sent)
     tools = [c.tool for c in cmds]
-    assert "timeline_background" in tools and tools.count("track_add") == 2
+    assert "timeline_background" in tools and tools.count("track_add") == 3  # video, logo, nhạc
     logo_tf = next(
         c for c in cmds if c.tool == "clip_transform" and c.args["clipId"] == "@clip:logo"
     )

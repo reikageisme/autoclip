@@ -254,6 +254,10 @@ def compile_plan(spec: RecipeSpec, plan: RenderPlan) -> list[ConcatCommand]:
         )
     ]
 
+    # Mọi cảnh trên một lane video riêng ở dưới cùng. Để Concat tự chọn lane thì cảnh
+    # xen kẽ 2 lane, và phụ đề thả "lên trên hình" có thể rơi vào lane đang có cảnh và
+    # ghi đè mất hình (thấy khung đen dưới phụ đề).
+    commands.append(_command("track_add", {"bottom": True, "@as": "track:video"}, params))
     seen_paths: set[str] = set()
     for item in items:
         path = str(_get(item, "clip_path", ""))
@@ -280,6 +284,7 @@ def compile_plan(spec: RecipeSpec, plan: RenderPlan) -> list[ConcatCommand]:
                 {
                     "mediaIds": [f"@media:{_get(item, 'clip_path', '')}"],
                     "start": round(cursor, 3),
+                    "trackId": "@track:video",
                     "@as": f"clip:{index}",
                 },
                 params,

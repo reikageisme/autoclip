@@ -180,7 +180,7 @@ def run_batch(
     seed: int | None = None,
     use_llm: bool = True,
     voice: VoiceOptions | None = None,
-    attempts: int = 2,
+    attempts: int = 3,
     settings: Settings | None = None,
     render_fn: Callable[[RecipeSpec, RenderPlan], RenderResult] = render,
     qa_fn: Callable[[Path, RecipeSpec, RenderPlan], QAResult] = _qa,
@@ -283,12 +283,8 @@ def run_batch(
                 job.error = "QA trượt: " + "; ".join(qa.notes)
                 item.status, item.error = "failed", job.error
                 db.commit()
-                if any(n.startswith(BLACK_NOTE) for n in qa.notes):
-                    # Transition của Concat đôi khi render ra đoạn đen: giữ plan, bỏ transition.
-                    retry_plan = plan.model_copy(deep=True)
-                    for it in retry_plan.items:
-                        it.transition = None
-                    retry_plan.params["transitions"] = "off (black_spans)"
+                # Đoạn đen: lỗi render của Concat phụ thuộc chuỗi cảnh liền trước (không phải
+                # transition) — lần thử sau lập plan mới bằng seed khác, chuỗi cảnh khác.
             else:
                 job.status = "failed"
                 db.commit()
