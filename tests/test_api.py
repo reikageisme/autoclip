@@ -226,6 +226,32 @@ def test_schedules_and_system_api(client):
     assert system["cleanup"]["videos_days"] == 30
 
 
+def test_schedule_due_and_repeat(client):
+    from autoclip import schedules as store
+    from autoclip.db import make_engine
+
+    engine = make_engine()
+    try:
+        row = store.create_schedule(
+            engine,
+            recipe="hook-3cut-caption.json",
+            count=1,
+            run_at=datetime.now(UTC) - timedelta(minutes=1),
+            repeat_minutes=60,
+        )
+        due = store.due_schedules(engine)
+        assert [r.id for r in due] == [row.id]
+        store.mark_run(engine, row.id)
+        assert store.due_schedules(engine) == []
+        saved = store.list_schedules(engine)[0]
+        assert saved.enabled is True and saved.last_run_at is not None
+        assert store.utc(saved.run_at) > datetime.now(UTC)
+        assert store.set_enabled(engine, row.id, False)
+        assert store.list_schedules(engine)[0].enabled is False
+    finally:
+        engine.dispose()
+
+
 def test_cleanup_api_keeps_recent_files(client):
     data = Path(get_settings().data_dir)
     old = data / "proxies" / "old.mp4"

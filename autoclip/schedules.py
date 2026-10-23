@@ -86,8 +86,9 @@ def set_enabled(engine, schedule_id: int, enabled: bool) -> bool:
         if row is None:
             return False
         row.enabled = enabled
-        if enabled and row.run_at <= utc(datetime.now(UTC)):
-            row.run_at = utc(datetime.now(UTC)) + timedelta(seconds=5)
+        now = utc(datetime.now(UTC))
+        if enabled and utc(row.run_at) <= now:
+            row.run_at = now + timedelta(seconds=5)
         db.commit()
         return True
 

@@ -68,6 +68,13 @@ def test_import_csv_views_and_rank_recipes(env):
     assert len(list_metrics(engine)) == 3
 
 
+def test_views_with_dot_thousands(env):
+    engine, a, _ = env
+    report = import_metrics(engine, f"render_id,views\n{a},1.234\n")
+    assert report.imported == 1
+    assert recipe_scores(engine)["kieu-a"]["avg_views"] == 1234
+
+
 def test_import_rejects_empty_or_bad_csv(env):
     engine, _, _ = env
     with pytest.raises(ValueError):
