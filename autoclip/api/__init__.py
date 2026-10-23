@@ -175,8 +175,11 @@ class PublishScheduler:
         self._thread: threading.Thread | None = None
 
     def start(self) -> None:
+        from autoclip.publish import recover_interrupted
+
         if self._thread and self._thread.is_alive():
             return
+        recover_interrupted(self.engine)
         self._thread = threading.Thread(target=self._loop, name="autoclip-publish", daemon=True)
         self._thread.start()
 
@@ -232,13 +235,13 @@ class MaintenanceScheduler:
                 log.exception("bảo trì định kỳ lỗi")
 
     def _maintain(self) -> None:
-        from autoclip.ops import cleanup, disk_status
+        from autoclip.ops import cleanup, disk_status, protected_paths
         from autoclip.schedules import defer, due_schedules, mark_run
 
         s = self.settings_fn()
         if time.monotonic() - self._last_cleanup >= s.maintenance_interval_min * 60:
             self._last_cleanup = time.monotonic()
-            report = cleanup(s)
+            report = cleanup(s, keep=protected_paths(self.engine))
             if report.deleted:
                 log.info("bảo trì: xoá %d mục, %.1f MB", report.deleted, report.mb_freed)
             for disk in disk_status(s):
@@ -743,10 +746,11 @@ def create_app(
 
     @app.post("/api/system/cleanup")
     def system_cleanup(req: CleanupRequest) -> dict[str, Any]:
-        from autoclip.ops import cleanup
+        from autoclip.ops import cleanup, protected_paths
 
         report = cleanup(
             get_settings(),
+            keep=protected_paths(engine),
             dry_run=req.dry_run,
             proxies_days=req.proxies_days,
             projects_days=req.projects_days,

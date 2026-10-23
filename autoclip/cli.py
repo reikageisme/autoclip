@@ -286,13 +286,31 @@ def retag() -> None:
 
 
 @app.command()
+def say(
+    text: str = typer.Argument(..., help="Câu tiếng Việt cần đọc"),
+    out: Path = typer.Option(Path("say.wav"), "--out", "-o", help="File WAV ghi ra"),
+    speed: float = typer.Option(1.0, "--speed"),
+) -> None:
+    """Đọc thử một câu bằng giọng Piper (kiểm tra giọng đọc trên máy này)."""
+    from autoclip.voice import synthesize
+
+    seconds = synthesize(text, out, get_settings().data_dir / "models", speed)
+    typer.echo(f"Đã ghi {out} ({seconds:.1f} giây)")
+
+
+@app.command()
 def cleanup(
     dry_run: bool = typer.Option(False, "--dry-run", help="Chỉ đếm, không xoá"),
 ) -> None:
     """Dọn proxy/project/video cũ dưới DATA_DIR theo cấu hình CLEANUP_*_DAYS."""
+    from autoclip.db import make_engine
+    from autoclip.db.migrate import upgrade
     from autoclip.ops import cleanup as run_cleanup
+    from autoclip.ops import protected_paths
 
-    report = run_cleanup(get_settings(), dry_run=dry_run)
+    engine = make_engine()
+    upgrade(engine)
+    report = run_cleanup(get_settings(), dry_run=dry_run, keep=protected_paths(engine))
     typer.echo(
         f"{'Sẽ xoá' if dry_run else 'Đã xoá'} {report.deleted} mục, "
         f"{report.mb_freed:.1f} MB — {report.details}"

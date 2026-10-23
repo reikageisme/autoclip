@@ -9,7 +9,6 @@ from __future__ import annotations
 import logging
 import os
 import shutil
-import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -94,6 +93,35 @@ def _remove(path: Path) -> tuple[int, int, str | None]:
         return 0, 0, f"{path}: {exc}"
 
 
+def _key(path: Path | str) -> str:
+    return os.path.normcase(str(Path(path).resolve()))
+
+
+def protected_paths(engine) -> set[str]:
+    """File còn dùng: proxy của clip trong kho, video đã duyệt hoặc đang chờ đăng."""
+    from sqlalchemy import or_, select
+    from sqlalchemy.orm import Session
+
+    from autoclip.db.models import Clip, Publication, Render
+
+    keep: set[str] = set()
+    with Session(engine) as db:
+        keep.update(_key(p) for p in db.scalars(select(Clip.path)))
+        waiting = select(Publication.render_id).where(
+            Publication.status.in_(("scheduled", "publishing"))
+        )
+        rows = db.execute(
+            select(Render.output_path, Render.project_path).where(
+                or_(Render.review == "approved", Render.id.in_(waiting))
+            )
+        )
+        for out, project in rows:
+            keep.add(_key(out))
+            if project:
+                keep.add(_key(project))
+    return keep
+
+
 def _clean_folder(
     root: Path,
     days: int,
@@ -101,6 +129,8 @@ def _clean_folder(
     now: datetime,
     dirs_only: bool = False,
     suffix: tuple[str, ...] | None = None,
+    keep: set[str] | None = None,
+    dry_run: bool = False,
 ) -> tuple[int, int, list[str]]:
     if days <= 0 or not root.is_dir():
         return 0, 0, []
@@ -113,6 +143,11 @@ def _clean_folder(
         if suffix and path.suffix.lower() not in suffix:
             continue
         if not _old_enough(path, cutoff):
+            continue
+        if keep and _key(path) in keep:
+            continue
+        if dry_run:
+            deleted += 1
             continue
         n, b, error = _remove(path)
         deleted += n
@@ -130,8 +165,12 @@ def cleanup(
     proxies_days: int | None = None,
     projects_days: int | None = None,
     videos_days: int | None = None,
+    keep: set[str] | None = None,
 ) -> CleanupReport:
-    """Xoá proxy/project/video cũ dưới DATA_DIR. `dry_run` chỉ đếm."""
+    """Xoá proxy/project/video cũ dưới DATA_DIR. `dry_run` chỉ đếm.
+
+    `keep` (xem `protected_paths`) là các đường dẫn không bao giờ xoá.
+    """
     now = now or datetime.now(UTC)
     report = CleanupReport()
     data = Path(settings.data_dir).resolve()
@@ -166,33 +205,14 @@ def cleanup(
         if data not in root.parents and root != data:
             report.errors.append(f"bỏ qua đường dẫn ngoài DATA_DIR: {root}")
             continue
-        if dry_run:
-            cutoff = (now - timedelta(days=days)).timestamp()
-            count = sum(
-                1
-                for p in root.iterdir()
-                if (not dirs_only or p.is_dir())
-                and (not suffix or p.suffix.lower() in suffix)
-                and _old_enough(p, cutoff)
-            ) if root.is_dir() else 0
-            report.details[name] = count
-            continue
         deleted, size, errors = _clean_folder(
-            root, days, now=now, dirs_only=dirs_only, suffix=suffix
+            root, days, now=now, dirs_only=dirs_only, suffix=suffix, keep=keep, dry_run=dry_run
         )
+        report.details[name] = deleted
         report.deleted += deleted
+        if dry_run:
+            continue
         report.bytes_freed += size
         report.errors.extend(errors)
-        report.details[name] = deleted
         log.info("dọn %s: %d mục, %.1f MB", name, deleted, size / (1024 * 1024))
     return report
-
-
-def cleanup_loop(settings: Settings, interval_sec: float = 6 * 3600) -> None:
-    """Chạy dọn định kỳ (dùng trong thread nền; không chặn service)."""
-    while True:
-        try:
-            cleanup(settings)
-        except Exception:
-            log.exception("dọn dữ liệu định kỳ lỗi")
-        time.sleep(interval_sec)

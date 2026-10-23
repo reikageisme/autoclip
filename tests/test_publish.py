@@ -104,3 +104,57 @@ def test_missing_page_or_token_is_rejected(env, monkeypatch):
     get_settings.cache_clear()
     with pytest.raises(PublishError):
         schedule_publication(engine, rid, settings=get_settings())
+
+
+def test_interrupted_publication_marked_failed(env):
+    from autoclip.publish import recover_interrupted
+
+    engine, settings, rid = env
+    row = schedule_publication(engine, rid, settings=settings)
+    with Session(engine) as db:
+        db.get(Publication, row.id).status = "publishing"
+        db.commit()
+    assert recover_interrupted(engine) == 1
+    with Session(engine) as db:
+        assert db.get(Publication, row.id).status == "failed"
+
+
+def test_cleanup_keeps_library_and_pending_videos(env):
+    import os
+
+    from autoclip.db.models import Clip
+    from autoclip.ops import cleanup, protected_paths
+
+    engine, settings, rid = env
+    proxies = settings.data_dir / "proxies"
+    proxies.mkdir(parents=True)
+    used, stale = proxies / "used.mp4", proxies / "stale.mp4"
+    old_video = settings.out_dir / "old.mp4"
+    for f in (used, stale, old_video):
+        f.write_bytes(b"x")
+    pending = settings.out_dir / "v1.mp4"
+    old = (datetime.now(UTC) - timedelta(days=90)).timestamp()
+    for f in (used, stale, old_video, pending):
+        os.utime(f, (old, old))
+    with Session(engine) as db:
+        db.add(
+            Clip(
+                path=str(used),
+                sha1="a" * 40,
+                duration=1,
+                width=1,
+                height=1,
+                fps=30,
+                has_audio=False,
+            )
+        )
+        db.commit()
+    schedule_publication(engine, rid, settings=settings)
+
+    keep = protected_paths(engine)
+    dry = cleanup(settings, dry_run=True, keep=keep)
+    assert dry.details["proxies"] == 1 and dry.details["videos"] == 1
+    assert stale.exists()
+    cleanup(settings, keep=keep)
+    assert used.exists() and pending.exists()
+    assert not stale.exists() and not old_video.exists()

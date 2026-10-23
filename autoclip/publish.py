@@ -55,6 +55,11 @@ def clear_facebook_token(settings: Settings) -> None:
     SecretStore(settings.data_dir).delete(TOKEN_NAME)
 
 
+def _scrub(text: str, token: str | None) -> str:
+    """Không để token lọt vào thông báo lỗi (lưu DB, hiện trên dashboard)."""
+    return text.replace(token, "***") if token else text
+
+
 def _caption(render: Render) -> str:
     return (render.title or render.headline or "").strip()
 
@@ -66,17 +71,14 @@ def check_page(settings: Settings, token: str | None = None) -> str:
         raise PublishError("chưa nhập Page ID trong Cài đặt")
     if not token:
         raise PublishError("chưa nhập token Page trong Cài đặt")
-    url = (
-        f"{GRAPH_ROOT}/{settings.fb_graph_version}/"
-        f"{settings.fb_page_id.strip()}?fields=name&access_token={token}"
-    )
+    url = f"{GRAPH_ROOT}/{settings.fb_graph_version}/{settings.fb_page_id.strip()}"
     try:
         with httpx.Client(timeout=30) as client:
-            resp = client.get(url)
+            resp = client.get(url, params={"fields": "name", "access_token": token})
     except httpx.HTTPError as exc:
-        raise PublishError(f"không gọi được Graph API: {exc}") from exc
+        raise PublishError(_scrub(f"không gọi được Graph API: {exc}", token)) from exc
     if resp.status_code >= 400:
-        raise PublishError(_graph_error(resp))
+        raise PublishError(_scrub(_graph_error(resp), token))
     return str(resp.json().get("name") or settings.fb_page_id)
 
 
@@ -115,20 +117,21 @@ def publish_video(
     }
     url = f"{GRAPH_ROOT}/{settings.fb_graph_version}/{page_id}/videos"
     try:
-        with path.open("rb") as fh, httpx.Client(
-            timeout=httpx.Timeout(1200.0, connect=30.0)
-        ) as client:
+        with (
+            path.open("rb") as fh,
+            httpx.Client(timeout=httpx.Timeout(1200.0, connect=30.0)) as client,
+        ):
             resp = client.post(
                 url,
                 data=data,
                 files={"source": (path.name, fh, "video/mp4")},
             )
     except httpx.HTTPError as exc:
-        raise PublishError(f"upload lên Facebook lỗi: {exc}") from exc
+        raise PublishError(_scrub(f"upload lên Facebook lỗi: {exc}", token)) from exc
     except OSError as exc:
         raise PublishError(f"không đọc được video: {exc}") from exc
     if resp.status_code >= 400:
-        raise PublishError(_graph_error(resp))
+        raise PublishError(_scrub(_graph_error(resp), token))
     post_id = str(resp.json().get("id") or "")
     if not post_id:
         raise PublishError(f"Graph API không trả id bài viết: {resp.text[:300]}")
@@ -193,6 +196,20 @@ def retry_publication(engine, publication_id: int) -> bool:
         row.error = None
         db.commit()
         return True
+
+
+def recover_interrupted(engine) -> int:
+    """Dòng kẹt ở `publishing` (service tắt giữa lúc upload) → `failed`.
+
+    Không tự gửi lại: bài có thể đã lên Page, người dùng kiểm tra rồi bấm Thử lại.
+    """
+    with Session(engine) as db:
+        rows = db.scalars(select(Publication).where(Publication.status == "publishing")).all()
+        for row in rows:
+            row.status = "failed"
+            row.error = "bị gián đoạn khi đang đăng — xem Page đã có bài chưa rồi mới bấm Thử lại"
+        db.commit()
+        return len(rows)
 
 
 def list_publications(engine, limit: int = 100) -> list[dict]:
