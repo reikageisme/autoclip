@@ -19,6 +19,7 @@ dependencies = [
     "pillow>=10.0",
     "numpy>=1.26",
     "yt-dlp>=2025.1",
+    "av>=12,<19",
 ]
 
 [project.scripts]
