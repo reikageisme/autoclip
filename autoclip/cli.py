@@ -97,6 +97,47 @@ def spike(
     typer.echo(f"Render:  {r.render_sec:.2f}s  ({r.render_ratio:.2f} giây render / giây video)")
 
 
+@app.command()
+def fetch(
+    urls: list[str] = typer.Argument(..., help="Link video, hoặc trang Videos/Reels của page"),
+    dest: Path = typer.Option(None, help="Thư mục gốc (mặc định data/source); con: <tên page>"),
+    limit: int = typer.Option(None, help="Tải tối đa N video mỗi trang danh sách"),
+    cookies_from_browser: str = typer.Option(
+        None, help="Lấy cookie từ trình duyệt (chrome/edge/firefox) khi video cần đăng nhập"
+    ),
+    cookies: Path = typer.Option(None, help="File cookies.txt (Netscape) thay cho trình duyệt"),
+    sleep: float = typer.Option(3.0, help="Nghỉ giữa các video (giây)"),
+    then_ingest: bool = typer.Option(True, "--ingest/--no-ingest", help="Ingest ngay sau khi tải"),
+    whisper: bool = typer.Option(False, "--whisper/--no-whisper", help="Whisper khi ingest"),
+) -> None:
+    """Tải video nguồn của khách bằng yt-dlp (không tải trùng), rồi ingest.
+
+    Mỗi đối số là một link video/reel, hoặc một file .txt chứa mỗi dòng một link.
+    yt-dlp không đọc được danh sách video của cả page Facebook.
+    """
+    from autoclip.fetch import expand_urls
+    from autoclip.fetch import fetch as do_fetch
+
+    urls = expand_urls(urls)
+    if not urls:
+        raise typer.BadParameter("không có link nào")
+    r = do_fetch(
+        urls,
+        dest or get_settings().data_dir / "source",
+        limit=limit,
+        cookies_from_browser=cookies_from_browser,
+        cookies_file=cookies,
+        sleep_sec=sleep,
+    )
+    typer.echo(f"Tải mới {len(r.downloaded)} video vào {r.dest} (đã có từ trước: {r.skipped})")
+    for err in r.errors:
+        typer.echo(f"  lỗi: {err}", err=True)
+    if then_ingest and (r.downloaded or r.skipped):
+        ingest(folder=r.dest, whisper=whisper)
+    if r.errors and not r.downloaded:
+        raise typer.Exit(1)
+
+
 @app.command("concat-tools")
 def concat_tools() -> None:
     """Chạy concat headless, lưu tools/list ra data/concat_tools.json."""
