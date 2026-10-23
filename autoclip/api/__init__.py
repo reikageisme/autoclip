@@ -41,11 +41,19 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from autoclip.config import ENV_FILE, Settings, get_settings
+from autoclip.contracts import RecipeSpec
 from autoclip.db import make_engine
 from autoclip.db.migrate import upgrade
 from autoclip.db.models import Clip, Job, Recipe, Render, Segment
 from autoclip.diversity import recent_segment_ids
-from autoclip.styles import TRANSITIONS, StyleForm, Styles, estimate_videos, spec_to_form
+from autoclip.styles import (
+    TRANSITIONS,
+    StyleForm,
+    Styles,
+    estimate_videos,
+    slugify,
+    spec_to_form,
+)
 
 log = logging.getLogger(__name__)
 
@@ -68,6 +76,20 @@ class FetchRequest(BaseModel):
     urls: list[str] = Field(..., min_length=1)
     page: str | None = None
     whisper: bool = True
+
+
+class ReviewRequest(BaseModel):
+    review: Literal["pending", "approved", "rejected"]
+
+
+class EditRequest(BaseModel):
+    headline: str | None = None
+    title: str | None = None
+
+
+class ExportRequest(BaseModel):
+    folder: str = ""
+    include_exported: bool = False
 
 
 class SettingsUpdate(BaseModel):
@@ -165,6 +187,60 @@ class BatchRunner:
             )
 
         return self._start("ingest", f"Nhập {folder.name}", 0, work)
+
+    def start_rerender(self, render_id: int, headline: str | None, title: str | None):
+        """Dựng lại đúng video đó (cùng cảnh) với headline mới; kết quả là render mới của job."""
+
+        def work() -> str:
+            from autoclip.batch import _qa, render_fields
+            from autoclip.contracts import RenderPlan, RenderText
+            from autoclip.render import render
+
+            engine = make_engine()
+            with Session(engine, expire_on_commit=False) as db:
+                old = db.get(Render, render_id)
+                job = db.get(Job, old.job_id)
+                spec = RecipeSpec.model_validate(db.get(Recipe, job.recipe_id).spec)
+                plan = RenderPlan.model_validate(old.plan)
+                if headline is not None:
+                    plan.texts = [t for t in plan.texts if t.kind == "captions"]
+                    heads = [t for t in spec.texts if t.kind != "captions"]
+                    if headline.strip() and heads:
+                        plan.texts.append(
+                            RenderText(
+                                kind=heads[0].kind,
+                                text=headline.strip().upper(),
+                                slot=heads[0].slot,
+                                style=heads[0].style,
+                                pos=heads[0].pos,
+                                start=0.0,
+                                end=2.8,
+                            )
+                        )
+                if title is not None:
+                    plan.params["title"] = title
+                job.status = "running"
+                db.commit()
+                rendered = render(spec, plan)
+                qa = _qa(rendered.output, spec, plan)
+                db.add(
+                    Render(
+                        job_id=job.id,
+                        output_path=str(rendered.output),
+                        qa_score=qa.score,
+                        qa_notes="; ".join(qa.notes) or None,
+                        duration=rendered.video_sec,
+                        size_bytes=rendered.output.stat().st_size,
+                        **render_fields(plan, rendered),
+                    )
+                )
+                job.status = "done"
+                db.commit()
+            engine.dispose()
+            self.state.update(done=1)
+            return "Đã dựng lại video với chữ mới."
+
+        return self._start("rerender", f"Dựng lại video #{render_id}", 1, work)
 
     def start_fetch(self, req: FetchRequest) -> dict[str, Any]:
         def work() -> str:
@@ -418,9 +494,12 @@ def create_app(
                             "thumb_path": _render_thumb(render, thumbs)
                             if job.status == "done"
                             else None,
-                            "project_path": str(project)
-                            if project is not None and project.is_dir()
-                            else None,
+                            "project_path": render.project_path
+                            or (str(project) if project is not None and project.is_dir() else None),
+                            "headline": render.headline,
+                            "title": render.title,
+                            "review": render.review,
+                            "exported": render.exported_at is not None,
                         },
                     }
                 )
@@ -495,6 +574,74 @@ def create_app(
             "message": reply.strip()[:200],
             "seconds": round(time.perf_counter() - t0, 1),
         }
+
+    def get_render(db: Session, render_id: int) -> Render:
+        render = db.get(Render, render_id)
+        if render is None:
+            raise HTTPException(404, "không có video này")
+        return render
+
+    @app.post("/api/renders/{render_id}/review")
+    def review(render_id: int, req: ReviewRequest) -> dict[str, Any]:
+        with Session(engine) as db:
+            get_render(db, render_id).review = req.review
+            db.commit()
+        return {"id": render_id, "review": req.review}
+
+    @app.post("/api/renders/{render_id}/edit", status_code=202)
+    def edit_render(render_id: int, req: EditRequest) -> dict[str, Any]:
+        """Sửa tiêu đề bài đăng (lưu ngay); sửa headline thì dựng lại video."""
+        with Session(engine) as db:
+            render = get_render(db, render_id)
+            if req.title is not None:
+                render.title = req.title.strip() or None
+                db.commit()
+            changed = req.headline is not None and req.headline.strip().upper() != (
+                render.headline or ""
+            )
+            if changed and render.plan is None:
+                raise HTTPException(400, "video cũ chưa lưu plan, không dựng lại được")
+        if not changed:
+            return {"id": render_id, "rerender": False}
+        runner.start_rerender(render_id, req.headline, req.title)
+        return {"id": render_id, "rerender": True}
+
+    @app.post("/api/jobs/{job_id}/redo", status_code=202)
+    def redo(job_id: int, llm: bool = True) -> dict[str, Any]:
+        """Làm một video mới cùng kiểu với job này (seed khác, cảnh khác)."""
+        import random
+
+        with Session(engine) as db:
+            job = db.get(Job, job_id)
+            if job is None:
+                raise HTTPException(404, "không có job này")
+            spec = RecipeSpec.model_validate(db.get(Recipe, job.recipe_id).spec)
+        req = BatchRequest(recipe="-", count=1, seed=random.randrange(10**6), llm=llm)
+        return runner.start(spec, req)
+
+    @app.post("/api/export")
+    def export(req: ExportRequest) -> dict[str, Any]:
+        """Chép video đã duyệt (chưa xuất) ra thư mục, mỗi video kèm .txt caption để đăng."""
+        dest = Path(req.folder.strip() or str(get_settings().data_dir / "export")).expanduser()
+        dest.mkdir(parents=True, exist_ok=True)
+        done = []
+        with Session(engine) as db:
+            latest = select(func.max(Render.id)).group_by(Render.job_id).scalar_subquery()
+            q = select(Render).where(Render.id.in_(latest), Render.review == "approved")
+            if not req.include_exported:
+                q = q.where(Render.exported_at.is_(None))
+            for render in db.scalars(q.order_by(Render.id)):
+                src = Path(render.output_path)
+                if not src.is_file():
+                    continue
+                stem = f"{render.id:04d}-" + slugify(render.headline or src.stem)[:50]
+                shutil.copy2(src, dest / f"{stem}.mp4")
+                caption = render.title or render.headline or ""
+                (dest / f"{stem}.txt").write_text(caption + "\n", encoding="utf-8")
+                render.exported_at = datetime.now(UTC)
+                done.append(stem)
+            db.commit()
+        return {"folder": str(dest), "count": len(done), "files": done}
 
     @app.get("/", response_class=HTMLResponse)
     def dashboard() -> HTMLResponse:

@@ -58,6 +58,20 @@ class BatchResult:
         return [i for i in self.items if i.status == "done"]
 
 
+def headline_of(plan: RenderPlan) -> str | None:
+    return next((t.text for t in plan.texts if t.kind != "captions"), None)
+
+
+def render_fields(plan: RenderPlan, rendered: RenderResult) -> dict:
+    """Phần của dòng renders để duyệt, sửa chữ và mở lại trong ReiCut."""
+    return {
+        "plan": plan.model_dump(mode="json"),
+        "headline": headline_of(plan),
+        "title": str(plan.params.get("title") or "") or None,
+        "project_path": str(rendered.project) if rendered.project else None,
+    }
+
+
 def _qa(path: Path, spec: RecipeSpec, plan: RenderPlan) -> QAResult:
     from autoclip.qa import evaluate
     from autoclip.qa.checks import check_black_spans
@@ -179,6 +193,7 @@ def run_batch(
                     qa_notes="; ".join(qa.notes) or None,
                     duration=rendered.video_sec,
                     size_bytes=rendered.output.stat().st_size,
+                    **render_fields(plan, rendered),
                 )
                 db.add(row)
                 db.flush()

@@ -99,6 +99,15 @@ class Render(Base):
     qa_notes: Mapped[str | None] = mapped_column(String)
     duration: Mapped[float | None] = mapped_column(Float)
     size_bytes: Mapped[int | None] = mapped_column(Integer)
+    plan: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    """RenderPlan đã dựng (model_dump) — để sửa chữ rồi dựng lại đúng video đó."""
+    headline: Mapped[str | None] = mapped_column(String)
+    title: Mapped[str | None] = mapped_column(String)
+    """Mô tả bài đăng + hashtag (AI viết hoặc người sửa)."""
+    review: Mapped[str] = mapped_column(String(16), default="pending", server_default="pending")
+    """pending | approved | rejected"""
+    project_path: Mapped[str | None] = mapped_column(String)
+    exported_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class UsageLog(Base):

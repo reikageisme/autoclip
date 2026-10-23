@@ -123,3 +123,51 @@ def test_custom_style_crud(client):
     assert client.delete("/api/recipes/hook-3cut-caption.json").status_code == 400
     assert client.delete(f"/api/recipes/{made['file']}").status_code == 200
     assert "fade" in client.get("/api/recipes/options").json()["transitions"]
+
+
+def test_review_edit_title_and_export(client, tmp_path):
+    from sqlalchemy.orm import Session
+
+    from autoclip.db import make_engine
+    from autoclip.db.models import Job, Recipe, Render
+
+    video = get_settings().out_dir / "v1.mp4"
+    video.parent.mkdir(parents=True, exist_ok=True)
+    video.write_bytes(b"mp4")
+    engine = make_engine()
+    with Session(engine) as db:
+        recipe = Recipe(name="r", aspect="9:16", duration_target=[15, 30], spec={})
+        db.add(recipe)
+        db.flush()
+        job = Job(recipe_id=recipe.id, seed=1, status="done")
+        db.add(job)
+        db.flush()
+        db.add(Render(job_id=job.id, output_path=str(video), headline="HÀNG VỀ", title="cũ"))
+        db.commit()
+        rid = db.query(Render).one().id
+    engine.dispose()
+
+    assert (
+        client.post(f"/api/renders/{rid}/review", json={"review": "approved"}).json()["review"]
+        == "approved"
+    )
+    r = client.post(
+        f"/api/renders/{rid}/edit",
+        json={"title": "Nhập hàng nhanh #logistics", "headline": "hàng về"},
+    )
+    assert r.json() == {
+        "id": rid,
+        "rerender": False,
+    }  # headline không đổi (khác hoa/thường) -> không dựng lại
+    job_row = client.get("/api/jobs").json()[0]["render"]
+    assert job_row["title"] == "Nhập hàng nhanh #logistics" and job_row["review"] == "approved"
+
+    out = tmp_path / "xuat"
+    res = client.post("/api/export", json={"folder": str(out)}).json()
+    assert res["count"] == 1
+    names = sorted(p.name for p in out.iterdir())
+    assert names[0].endswith(".mp4") and names[1].endswith(".txt")
+    assert "Nhập hàng nhanh" in (out / names[1]).read_text(encoding="utf-8")
+    assert (
+        client.post("/api/export", json={"folder": str(out)}).json()["count"] == 0
+    )  # không xuất lại

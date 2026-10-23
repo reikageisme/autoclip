@@ -47,6 +47,8 @@ class RenderResult:
     video_sec: float
     render_sec: float
     commands: int
+    project: Path | None = None
+    """Thư mục project ReiCut đã lưu — mở được trong editor để sửa tay."""
 
 
 def render(
@@ -84,4 +86,5 @@ def render(
         video_sec=probe(output).duration,
         render_sec=render_sec,
         commands=len(commands),
+        project=Path(project),
     )
