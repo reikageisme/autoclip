@@ -103,6 +103,7 @@ def test_settings_roundtrip_keeps_key_and_comments(tmp_path, monkeypatch):
 
 def test_ingest_rejects_missing_folder(client, tmp_path):
     assert client.post("/api/ingest", json={"folder": str(tmp_path / "nope")}).status_code == 404
+    assert client.post("/api/ingest", json={"folder": "  "}).status_code == 400
     assert client.get("/api/clips").json() == []
 
 

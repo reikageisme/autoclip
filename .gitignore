@@ -25,3 +25,7 @@ Thumbs.db
 
 # Cài đặt Claude Code riêng của từng máy
 .claude/settings.local.json
+
+# PyInstaller
+build/
+dist/

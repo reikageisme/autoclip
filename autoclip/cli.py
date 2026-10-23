@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import sys
 from pathlib import Path
 
@@ -263,8 +264,13 @@ def concat_tools() -> None:
 def main() -> None:
     """Entry point: console Windows mặc định cp1252, phải đổi sang UTF-8 trước khi in help."""
     for stream in (sys.stdout, sys.stderr):
-        if hasattr(stream, "reconfigure"):
+        if stream is not None and hasattr(stream, "reconfigure"):
             stream.reconfigure(encoding="utf-8")
+    from autoclip.config import FROZEN, INSTALL_DIR
+
+    if FROZEN:
+        # ffmpeg.exe / ffprobe.exe nằm cạnh concat.exe trong thư mục cài
+        os.environ["PATH"] = f"{INSTALL_DIR}{os.pathsep}{os.environ.get('PATH', '')}"
     app()
 
 

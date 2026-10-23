@@ -40,7 +40,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from autoclip.config import Settings, get_settings
+from autoclip.config import ENV_FILE, Settings, get_settings
 from autoclip.db import make_engine
 from autoclip.db.migrate import upgrade
 from autoclip.db.models import Clip, Job, Recipe, Render, Segment
@@ -49,9 +49,7 @@ from autoclip.styles import TRANSITIONS, StyleForm, Styles, estimate_videos, spe
 
 log = logging.getLogger(__name__)
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
 STATIC = Path(__file__).resolve().parent / "static"
-ENV_FILE = REPO_ROOT / ".env"
 
 
 class BatchRequest(BaseModel):
@@ -367,7 +365,9 @@ def create_app(
 
     @app.post("/api/ingest", status_code=202)
     def ingest(req: IngestRequest) -> dict[str, Any]:
-        folder = Path(req.folder).expanduser()
+        if not req.folder.strip():
+            raise HTTPException(400, "chưa chọn thư mục")
+        folder = Path(req.folder.strip()).expanduser()
         if not folder.is_dir():
             raise HTTPException(404, f"không có thư mục {folder}")
         return runner.start_ingest(folder, req.whisper)

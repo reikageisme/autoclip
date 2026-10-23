@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import sys
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
@@ -11,23 +13,39 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 
+FROZEN = bool(getattr(sys, "frozen", False))
+"""Đang chạy bản đóng gói (PyInstaller) đi kèm ReiCut, không phải từ mã nguồn."""
+
+if FROZEN:
+    # <thư mục cài>/autoclip-service/autoclip-service.exe, concat.exe ở <thư mục cài>
+    INSTALL_DIR = Path(sys.executable).resolve().parent.parent
+    APP_HOME = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "AutoClip"
+    DEFAULT_CONCAT_BIN = INSTALL_DIR / "concat.exe"
+else:
+    INSTALL_DIR = _REPO_ROOT
+    APP_HOME = _REPO_ROOT
+    DEFAULT_CONCAT_BIN = Path(r"D:\work\reicut\src\target\app\concat.exe")
+
+ENV_FILE = APP_HOME / ".env"
+"""Cài đặt người dùng (panel ghi vào đây). Bản đóng gói: %LOCALAPPDATA%\\AutoClip\\.env."""
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=_REPO_ROOT / ".env",
+        env_file=ENV_FILE,
         env_file_encoding="utf-8",
         extra="ignore",
     )
 
     # --- Concat / ReiCut ---
-    concat_bin: Path = Path(r"D:\work\reicut\src\target\app\concat.exe")
+    concat_bin: Path = DEFAULT_CONCAT_BIN
     # Thư mục ngoài home được phép ghi; chuỗi ngăn cách bằng os.pathsep, truyền nguyên cho Concat.
     concat_mcp_roots: str = ""
     concat_mcp_mode: Literal["headless", "window", "auto"] = "headless"
     concat_timeout_sec: float = 600.0
 
     # --- Dữ liệu ---
-    data_dir: Path = _REPO_ROOT / "data"
+    data_dir: Path = APP_HOME / "data"
 
     # --- LLM (P3) ---
     # "openai_compat": endpoint kiểu OpenAI (/v1/chat/completions) như router riêng (9router).
