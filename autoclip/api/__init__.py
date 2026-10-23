@@ -194,6 +194,7 @@ def create_app(settings: Settings | None = None, runner: BatchRunner | None = No
                             "duration": render.duration,
                             "size_bytes": render.size_bytes,
                             "file": Path(render.output_path).name,
+                            "path": render.output_path,
                             "video_url": f"/api/renders/{render.id}/video",
                         },
                     }
