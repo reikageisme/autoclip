@@ -156,6 +156,14 @@ class HeuristicTagger:
             tags.append("face")
         if has_speech:
             tags.append("speech")
+        try:
+            from .layout import layout_tags
+
+            sample = list(frames)
+            landscape = bool(sample) and sample[0].shape[1] > sample[0].shape[0]
+            tags += layout_tags(sample, landscape)
+        except Exception:  # bố cục chỉ là gợi ý, không được làm hỏng ingest
+            logger.debug("layout tags failed", exc_info=True)
 
         score = combine_hook_score(motion, has_face, has_speech, self.weights, self.motion_full)
         return TagResult(tags=tags, hook_score=score)

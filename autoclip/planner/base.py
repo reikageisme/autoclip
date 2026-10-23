@@ -81,6 +81,24 @@ def _caption_chunks(text: str, start: float, end: float) -> list[RenderText]:
     ]
 
 
+def caption_y(seg: SegmentInfo, default: float) -> float:
+    """Phụ đề né chữ in sẵn: chữ ở dưới → lên cao; chữ cả trên lẫn dưới → giữa khung."""
+    tags = set(seg.tags)
+    if "text_bottom" in tags:
+        return 0.5 if "text_top" in tags else 0.3
+    return default
+
+
+def focus_of(seg: SegmentInfo) -> float | None:
+    for tag in seg.tags:
+        if tag.startswith("fx:"):
+            try:
+                return float(tag[3:])
+            except ValueError:
+                return None
+    return None
+
+
 def clean_headline(text: str | None) -> str:
     """Headline 1 dòng, viết hoa, cắt theo từ cho vừa HEADLINE_MAX_CHARS."""
     words = " ".join((text or "").replace("\n", " ").split()).strip(" \"'“”").split()
@@ -126,6 +144,7 @@ def assemble(
                 media_duration=clip.duration,
                 media_width=clip.width,
                 media_height=clip.height,
+                focus_x=focus_of(seg),
                 speed=speed,
                 transition=None if transition == "cut" else transition,
             )
@@ -136,7 +155,7 @@ def assemble(
             share = (src_end - src_start) / (seg.end - seg.start)
             spoken = " ".join(words[: max(1, round(len(words) * share))])
             for t in _caption_chunks(spoken, cursor, cursor + out_len):
-                t.pos = (0.5, variant.caption_y)
+                t.pos = (0.5, caption_y(seg, variant.caption_y))
                 texts.append(t)
         cursor += out_len
 

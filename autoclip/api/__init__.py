@@ -40,6 +40,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from autoclip.batch import VoiceOptions
 from autoclip.brand import BrandKit
 from autoclip.config import ENV_FILE, Settings, get_settings
 from autoclip.contracts import RecipeSpec
@@ -66,6 +67,8 @@ class BatchRequest(BaseModel):
     count: int = Field(5, ge=1, le=100)
     seed: int | None = None
     llm: bool = True
+    voice: VoiceOptions | None = None
+    """Có thì làm video lồng tiếng (kịch bản AI theo chủ đề hoặc gõ tay)."""
 
 
 class IngestRequest(BaseModel):
@@ -160,7 +163,10 @@ class BatchRunner:
             run = self._run
             if run is None:
                 from autoclip.batch import run_batch as run
-            result = run(spec, req.count, seed=req.seed, use_llm=req.llm, progress=self._progress)
+            extra = {"voice": req.voice} if req.voice else {}
+            result = run(
+                spec, req.count, seed=req.seed, use_llm=req.llm, progress=self._progress, **extra
+            )
             self.state["stopped_reason"] = result.stopped_reason
             return None
 

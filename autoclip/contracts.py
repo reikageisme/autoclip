@@ -193,6 +193,8 @@ class RenderItem(_Model):
     media_width: int | None = None
     media_height: int | None = None
     """Kích thước nguồn — để phóng cho kín khung khi tỉ lệ khác khung output."""
+    focus_x: float | None = None
+    """Vị trí ngang của chủ thể trong nguồn (0–1); nguồn ngang cắt dọc sẽ bám theo đây."""
     speed: float = 1.0
     transition: str | None = None
     """Transition vào item này; None = cut."""

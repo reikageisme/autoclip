@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -108,12 +109,77 @@ def _recipe_id(s: Session, spec: RecipeSpec) -> int:
     return row.id
 
 
+class VoiceOptions(BaseModel):
+    """Chế độ lồng tiếng cho batch: AI viết theo `topic`, hoặc đọc `script` người gõ."""
+
+    topic: str = ""
+    script: str = ""
+    """Mỗi dòng một câu. Có AI + topic thì đây là kịch bản dự phòng khi AI lỗi."""
+    speed: float = Field(1.0, ge=0.7, le=1.5)
+    lines: int = Field(0, ge=0, le=20)
+    """Số câu AI viết; 0 = theo độ dài kiểu video (~3.5 giây/câu)."""
+
+
+def voice_plan(
+    spec: RecipeSpec,
+    pool,
+    seed: int,
+    exclude: set[int],
+    voice: VoiceOptions,
+    settings: Settings,
+    use_llm: bool,
+) -> RenderPlan:
+    """Kịch bản → giọng đọc → plan lồng tiếng cho một video."""
+    from autoclip.diversity import make_variant
+    from autoclip.llm import LLMClient
+    from autoclip.planner.voiceover import Line, plan_voiceover
+    from autoclip.script import clean_lines, write_script
+    from autoclip.voice import synthesize
+
+    lines = clean_lines(voice.script)
+    headline, title = "", ""
+    llm = LLMClient.from_settings(settings)
+    if use_llm and voice.topic.strip() and llm.available:
+        target = sum(spec.duration_target) / 2
+        n = voice.lines or max(3, min(12, round(target / 3.5)))
+        try:
+            lines, headline, title = write_script(
+                llm, voice.topic, lines=n, angle=make_variant(spec, seed).angle
+            )
+        except Exception as exc:  # AI lỗi: dùng kịch bản người gõ nếu có
+            log.warning("AI viết kịch bản lỗi (seed %s): %s", seed, exc)
+    if not lines:
+        raise ValueError("chưa có kịch bản: nhập chủ đề (cần AI) hoặc gõ kịch bản")
+    folder = settings.data_dir / "voice" / str(seed)
+    spoken = []
+    for i, text in enumerate(lines):
+        wav = folder / f"{i:02d}.wav"
+        spoken.append(
+            Line(text, wav, synthesize(text, wav, settings.data_dir / "models", voice.speed))
+        )
+    return plan_voiceover(
+        spec, pool, seed, exclude, spoken, headline=headline or lines[0], title=title
+    )
+
+
+def _qa_spec(spec: RecipeSpec, plan: RenderPlan) -> RecipeSpec:
+    """Lồng tiếng: thời lượng do lời đọc quyết định, không theo khoảng của kiểu video."""
+    if plan.params.get("planner") != "voiceover":
+        return spec
+    total = sum((i.src_end - i.src_start) / i.speed for i in plan.items)
+    outro = (plan.params.get("brand") or {}).get("outro") or {}
+    return spec.model_copy(
+        update={"duration_target": (total * 0.9, total * 1.1 + float(outro.get("seconds", 0)) + 1)}
+    )
+
+
 def run_batch(
     spec: RecipeSpec,
     count: int,
     *,
     seed: int | None = None,
     use_llm: bool = True,
+    voice: VoiceOptions | None = None,
     attempts: int = 2,
     settings: Settings | None = None,
     render_fn: Callable[[RecipeSpec, RenderPlan], RenderResult] = render,
@@ -160,7 +226,11 @@ def run_batch(
                     if retry_plan is not None:
                         plan, retry_plan = retry_plan, None
                     else:
-                        plan = planner.plan(spec, pool, plan_seed, exclude)
+                        plan = (
+                            voice_plan(spec, pool, plan_seed, exclude, voice, s, use_llm)
+                            if voice
+                            else planner.plan(spec, pool, plan_seed, exclude)
+                        )
                 except PlanError as exc:
                     result.stopped_reason = (
                         f"Kho clip đã dùng hết sau {len(result.done)} video — nhập thêm clip nguồn"
@@ -179,7 +249,7 @@ def run_batch(
                     rendered = render_fn(spec, plan)
                     job.status = "qa"
                     db.commit()
-                    qa = qa_fn(rendered.output, spec, plan)
+                    qa = qa_fn(rendered.output, _qa_spec(spec, rendered.plan), rendered.plan)
                 except Exception as exc:  # render/QA lỗi → thử seed khác
                     log.exception("job %s lần %d lỗi", job.id, attempt + 1)
                     job.error = f"{type(exc).__name__}: {exc}"

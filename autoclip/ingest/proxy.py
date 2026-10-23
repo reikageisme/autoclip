@@ -33,20 +33,29 @@ def _scale(width: int, height: int) -> str:
     return "scale=1080:-2" if width <= height else "scale=-2:1080"
 
 
-def make_proxy(src: Path, dest: Path, width: int, height: int, timeout: float = 4 * 3600) -> Path:
+def make_proxy(
+    src: Path, dest: Path, width: int, height: int, timeout: float = 4 * 3600, force: bool = False
+) -> Path:
     """Tạo `dest` nếu chưa có. Thử Intel QSV trước (nhanh hơn), không được thì x264."""
-    if dest.is_file() and dest.stat().st_size > 0:
+    if dest.is_file() and dest.stat().st_size > 0 and not force:
         return dest
     dest.parent.mkdir(parents=True, exist_ok=True)
     tmp = dest.with_suffix(".tmp.mp4")
     vf = _scale(width, height)
     common = ["-hide_banner", "-v", "error", "-y", "-i", str(src)]
     tail = ["-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", str(tmp)]
+    # Keyframe mỗi giây: Concat tua tới giữa file dài nhanh và đúng. GOP mặc định của QSV
+    # (256 frame, ~8.5s) làm cảnh lấy giữa hai keyframe xa bị render ra khung đen.
+    gop = ["-g", "30", "-keyint_min", "30"]
     attempts = [
-        ("qsv", ["-vf", f"{vf},format=nv12", "-c:v", "h264_qsv", "-global_quality", "22"]),
+        (
+            "qsv",
+            [*gop, "-vf", f"{vf},format=nv12", "-c:v", "h264_qsv", "-global_quality", "22"],
+        ),
         (
             "x264",
             [
+                *gop,
                 "-vf",
                 vf,
                 "-c:v",

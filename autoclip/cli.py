@@ -252,6 +252,36 @@ def _exit_with_parent(pid: int) -> None:
     threading.Thread(target=watch, name="parent-watch", daemon=True).start()
 
 
+@app.command()
+def retag() -> None:
+    """Gắn lại nhãn bố cục (chữ in sẵn, điểm nhìn) cho kho cũ, đọc từ thumbnail."""
+    import cv2
+    from sqlalchemy import select
+    from sqlalchemy.orm import Session
+
+    from autoclip.db import make_engine
+    from autoclip.db.migrate import upgrade
+    from autoclip.db.models import Clip, Segment
+    from autoclip.ingest.layout import layout_tags
+
+    engine = make_engine()
+    upgrade(engine)
+    changed = 0
+    with Session(engine) as db:
+        rows = db.execute(select(Segment, Clip).join(Clip, Clip.id == Segment.clip_id)).all()
+        for seg, clip in rows:
+            image = cv2.imread(seg.thumb_path) if seg.thumb_path else None
+            if image is None:
+                continue
+            keep = [t for t in seg.tags if not t.startswith(("text_", "fx:"))]
+            tags = keep + layout_tags([image[:, :, ::-1]], clip.width > clip.height)
+            if tags != seg.tags:
+                seg.tags = tags
+                changed += 1
+        db.commit()
+    typer.echo(f"Gắn lại nhãn bố cục cho {changed}/{len(rows)} đoạn")
+
+
 @app.command("concat-tools")
 def concat_tools() -> None:
     """Chạy concat headless, lưu tools/list ra data/concat_tools.json."""

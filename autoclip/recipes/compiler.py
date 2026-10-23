@@ -116,6 +116,20 @@ def _fill_scale(item: RenderItem, width: int, height: int) -> float:
     return max(src / frame, frame / src)
 
 
+def _reframe_offset(item: RenderItem, width: int, height: int, fill: float) -> float:
+    """Nguồn ngang phóng kín khung dọc: dịch ngang để chủ thể (`focus_x`) gần giữa khung.
+
+    Bề ngang hình sau khi phóng là `fill` lần bề ngang khung; dịch tối đa (fill-1)/2 để
+    khung vẫn kín hình.
+    """
+    fx = _get(item, "focus_x")
+    w, h = _get(item, "media_width"), _get(item, "media_height")
+    if fx is None or not w or not h or w / h <= width / height:
+        return 0.0
+    limit = (fill - 1) / 2
+    return round(max(-limit, min(limit, (0.5 - float(fx)) * fill)), 4)
+
+
 def _timeline_duration(item: RenderItem) -> float:
     speed = float(_get(item, "speed", 1.0) or 1.0)
     if speed <= 0:
@@ -298,9 +312,11 @@ def compile_plan(spec: RecipeSpec, plan: RenderPlan) -> list[ConcatCommand]:
             )
         fill = _fill_scale(item, width, height) if params.get("fit", "fill") == "fill" else 1.0
         if fill > 1.001:
-            commands.append(
-                _command("clip_transform", {"clipId": clip_ref, "scale": round(fill, 4)}, params)
-            )
+            transform = {"clipId": clip_ref, "scale": round(fill, 4)}
+            shift = _reframe_offset(item, width, height, fill)
+            if shift:
+                transform["offsetX"] = shift
+            commands.append(_command("clip_transform", transform, params))
         speed = float(_get(item, "speed", 1.0) or 1.0)
         if abs(speed - 1.0) > 0.001 and speed > 0:
             commands.append(
@@ -407,6 +423,7 @@ def compile_plan(spec: RecipeSpec, plan: RenderPlan) -> list[ConcatCommand]:
                 )
             )
 
+    commands.extend(_voice_commands(params, len(items)))
     commands.extend(_brand_commands(params, total, width, height))
     return commands
 
@@ -415,6 +432,33 @@ def _is_caption(text: Any) -> bool:
     kind = str(_get(text, "kind", "") or "").lower()
     style = str(_get(text, "style", "") or "").lower()
     return kind == "captions" or style in {"caption", "word-pop"}
+
+
+def _voice_commands(params: dict[str, Any], count: int) -> list[ConcatCommand]:
+    """Chế độ lồng tiếng: tắt tiếng gốc các cảnh, đặt từng câu đọc lên lane giọng."""
+    out: list[ConcatCommand] = []
+    if params.get("mute_source"):
+        out += [
+            _command("clip_update", {"clipId": f"@clip:{i}", "patch": {"muted": True}}, params)
+            for i in range(count)
+        ]
+    lines = params.get("voiceover") or []
+    if lines:
+        out.append(_command("track_add", {"@as": "track:voice"}, params))
+        for line in lines:
+            out += [
+                _command("media_import", {"file": line["path"]}, params),
+                _command(
+                    "clip_add",
+                    {
+                        "mediaId": f"@media:{line['path']}",
+                        "trackId": "@track:voice",
+                        "start": round(float(line["start"]), 3),
+                    },
+                    params,
+                ),
+            ]
+    return out
 
 
 _CORNERS = {
