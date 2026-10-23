@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AutoClip</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --text: #1d2330; --muted: #6b7385; --line: #e3e6ec;
+    --accent: #2f6fed; --ok: #1f9d55; --bad: #d64545; --warn: #c98a00;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #14171d; --panel: #1c2028; --text: #e7eaf0; --muted: #98a1b3; --line: #2b313c;
+            --accent: #6d9bff; --ok: #3ccf7f; --bad: #ff6b6b; --warn: #f0b73c; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 14px/1.5 system-ui, "Segoe UI", Roboto, sans-serif; }
+  header { padding: 16px 20px; border-bottom: 1px solid var(--line); background: var(--panel);
+           display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  header h1 { margin: 0; font-size: 18px; }
+  header .sub { color: var(--muted); }
+  main { max-width: 1100px; margin: 0 auto; padding: 16px; display: grid; gap: 16px; }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
+  h2 { margin: 0 0 12px; font-size: 15px; }
+  .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
+  label { display: grid; gap: 4px; color: var(--muted); font-size: 12px; }
+  select, input { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line);
+                  border-radius: 6px; padding: 7px 9px; min-width: 0; }
+  input[type=number] { width: 90px; }
+  button { font: inherit; border: 0; border-radius: 6px; padding: 8px 16px; cursor: pointer;
+           background: var(--accent); color: #fff; font-weight: 600; }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
+  .stat { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
+  .stat b { display: block; font-size: 20px; }
+  .stat span { color: var(--muted); font-size: 12px; }
+  .msg { margin-top: 10px; color: var(--muted); min-height: 1.5em; }
+  .msg.err { color: var(--bad); }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 500; font-size: 12px; }
+  .st { font-weight: 600; }
+  .st.done { color: var(--ok); } .st.failed { color: var(--bad); }
+  .st.running, .st.qa, .st.queued { color: var(--warn); }
+  .note { color: var(--muted); font-size: 12px; max-width: 420px; }
+  .table-wrap { overflow-x: auto; }
+  dialog { border: 0; border-radius: 10px; padding: 0; background: #000; max-width: min(92vw, 420px); }
+  dialog video { display: block; width: 100%; max-height: 85vh; }
+  dialog::backdrop { background: rgba(0,0,0,.6); }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<header>
+  <h1>AutoClip</h1>
+  <span class="sub">Tạo video ngắn từ kho clip — dùng chung với panel AutoClip trong ReiCut</span>
+</header>
+<main>
+  <section>
+    <h2>Tạo batch</h2>
+    <div class="row">
+      <label>Recipe <select id="recipe"></select></label>
+      <label>Số video <input id="count" type="number" min="1" max="100" value="5"></label>
+      <label>Seed (để trống = ngẫu nhiên) <input id="seed" type="number" placeholder="tuỳ chọn"></label>
+      <label><span><input id="llm" type="checkbox" checked> Dùng LLM planner</span></label>
+      <button id="go">Tạo batch</button>
+    </div>
+    <div id="msg" class="msg"></div>
+  </section>
+
+  <section>
+    <h2>Trạng thái</h2>
+    <div class="stats">
+      <div class="stat"><b id="s-run">—</b><span>Batch</span></div>
+      <div class="stat"><b id="s-prog">—</b><span>Xong / lỗi / yêu cầu</span></div>
+      <div class="stat"><b id="s-avail">—</b><span>Segment còn dùng được</span></div>
+      <div class="stat"><b id="s-pool">—</b><span>Kho: clip / segment</span></div>
+    </div>
+    <div id="s-note" class="msg"></div>
+  </section>
+
+  <section>
+    <h2>Job gần đây</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>#</th><th>Recipe · seed</th><th>Trạng thái</th><th>QA</th><th>Video</th><th>Ghi chú</th></tr></thead>
+        <tbody id="jobs"><tr><td colspan="6" class="note">Đang tải…</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+
+<dialog id="player"><video id="video" controls autoplay playsinline></video></dialog>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const api = async (path, opts) => {
+  const r = await fetch(path, opts);
+  const body = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(body.detail || `HTTP ${r.status}`);
+  return body;
+};
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+async function loadRecipes() {
+  const list = await api("/api/recipes");
+  $("recipe").innerHTML = list.map((r) =>
+    `<option value="${esc(r.file)}" ${r.error ? "disabled" : ""}>${esc(r.name || r.file)}${r.error ? " (lỗi)" : ` · ${r.duration_target.join("–")}s`}</option>`
+  ).join("") || "<option disabled>Chưa có recipe trong recipes/</option>";
+}
+
+async function refresh() {
+  try {
+    const [st, pool, jobs] = await Promise.all([api("/api/status"), api("/api/pool"), api("/api/jobs?limit=40")]);
+    $("s-run").textContent = st.running ? "Đang chạy" : (st.started_at ? "Rảnh" : "Chưa chạy");
+    $("s-prog").textContent = st.requested ? `${st.done} / ${st.failed} / ${st.requested}` : "—";
+    $("s-avail").textContent = pool.available;
+    $("s-pool").textContent = `${pool.clips} / ${pool.segments}`;
+    $("s-note").textContent = st.error ? `Lỗi: ${st.error}` : (st.stopped_reason ? `Dừng sớm: ${st.stopped_reason}` : "");
+    $("s-note").className = "msg" + (st.error ? " err" : "");
+    $("go").disabled = !!st.running;
+    $("jobs").innerHTML = jobs.length ? jobs.map((j) => {
+      const r = j.render;
+      const video = r && j.status === "done"
+        ? `<a href="#" data-src="${esc(r.video_url)}">Xem</a> · <a href="${esc(r.video_url)}" download>Tải</a><div class="note">${(r.duration ?? 0).toFixed(1)}s</div>` : "—";
+      const note = j.error || (r && r.qa_notes) || "";
+      return `<tr><td>${j.id}</td><td>${esc(j.recipe)}<div class="note">seed ${j.seed} · lần ${j.attempts}</div></td>
+        <td class="st ${esc(j.status)}">${esc(j.status)}</td>
+        <td>${r && r.qa_score != null ? r.qa_score.toFixed(2) : "—"}</td><td>${video}</td>
+        <td class="note">${esc(note)}</td></tr>`;
+    }).join("") : `<tr><td colspan="6" class="note">Chưa có job nào.</td></tr>`;
+  } catch (e) {
+    $("s-note").textContent = `Không gọi được API: ${e.message}`;
+    $("s-note").className = "msg err";
+  }
+}
+
+$("go").addEventListener("click", async () => {
+  const seed = $("seed").value.trim();
+  const body = { recipe: $("recipe").value, count: Number($("count").value || 1), llm: $("llm").checked };
+  if (seed) body.seed = Number(seed);
+  $("msg").className = "msg"; $("msg").textContent = "Đang gửi…";
+  try {
+    await api("/api/batches", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    $("msg").textContent = `Đã tạo batch ${body.count} video. Mỗi video mất khoảng 0,5–2 phút.`;
+    refresh();
+  } catch (e) {
+    $("msg").className = "msg err"; $("msg").textContent = e.message;
+  }
+});
+
+$("jobs").addEventListener("click", (ev) => {
+  const a = ev.target.closest("a[data-src]");
+  if (!a) return;
+  ev.preventDefault();
+  $("video").src = a.dataset.src;
+  $("player").showModal();
+});
+$("player").addEventListener("click", (ev) => { if (ev.target === $("player")) { $("video").pause(); $("player").close(); } });
+
+loadRecipes().catch((e) => { $("msg").className = "msg err"; $("msg").textContent = e.message; });
+refresh();
+setInterval(refresh, 3000);
+</script>
+</body>
+</html>

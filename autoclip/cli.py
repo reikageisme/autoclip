@@ -208,6 +208,19 @@ def fetch(
         raise typer.Exit(1)
 
 
+@app.command()
+def serve(
+    port: int = typer.Option(8787, help="Cổng (chỉ nghe 127.0.0.1)"),
+) -> None:
+    """Chạy API + dashboard web tại http://127.0.0.1:8787 (panel ReiCut cũng gọi API này)."""
+    import uvicorn
+
+    from autoclip.api import create_app
+
+    typer.echo(f"Dashboard: http://127.0.0.1:{port}")
+    uvicorn.run(create_app(), host="127.0.0.1", port=port, log_level="info")
+
+
 @app.command("concat-tools")
 def concat_tools() -> None:
     """Chạy concat headless, lưu tools/list ra data/concat_tools.json."""
