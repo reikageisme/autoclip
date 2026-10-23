@@ -98,6 +98,31 @@ def spike(
 
 
 @app.command()
+def render(
+    recipe: Path = typer.Option(..., "--recipe", "-r", exists=True, help="File recipe.json"),
+    seed: int = typer.Option(None, help="Seed (mặc định ngẫu nhiên); cùng seed → cùng plan"),
+    count: int = typer.Option(1, help="Số video (seed, seed+1, ...)"),
+) -> None:
+    """Dựng video từ recipe + segment trong DB qua Concat headless (planner thô, chưa LLM)."""
+    import random
+
+    from autoclip.db import SqlClipRepository, make_engine
+    from autoclip.render import build_plan, load_recipe
+    from autoclip.render import render as do_render
+
+    spec = load_recipe(recipe)
+    repo = SqlClipRepository(make_engine())
+    base = seed if seed is not None else random.randrange(1_000_000)
+    for n in range(count):
+        plan = build_plan(spec, repo, base + n)
+        r = do_render(spec, plan)
+        typer.echo(
+            f"[seed {plan.seed}] {r.output} | {len(plan.items)} cảnh, {r.video_sec:.1f}s video, "
+            f"{r.commands} lệnh, render {r.render_sec:.1f}s ({r.render_sec / r.video_sec:.2f} s/s)"
+        )
+
+
+@app.command()
 def fetch(
     urls: list[str] = typer.Argument(..., help="Link video, hoặc trang Videos/Reels của page"),
     dest: Path = typer.Option(None, help="Thư mục gốc (mặc định data/source); con: <tên page>"),

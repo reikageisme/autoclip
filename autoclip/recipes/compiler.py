@@ -40,10 +40,17 @@ _STYLE_PRESETS: dict[str, dict[str, Any]] = {
     "plain": {"fontWeight": 400},
     "bold": {"fontWeight": 800},
     "stroke": {"fontWeight": 500, "strokeWidth": 0.008, "strokeColor": "#000000"},
-    "bold-stroke": {"fontWeight": 800, "strokeWidth": 0.008, "strokeColor": "#000000"},
+    "bold-stroke": {
+        "fontWeight": 800,
+        "fontSize": 0.055,
+        "maxWidth": 0.86,
+        "strokeWidth": 0.008,
+        "strokeColor": "#000000",
+    },
     "caption": {"fontSize": 0.04, "fontWeight": 600},
     "word-pop": {
-        "fontSize": 0.065,
+        "fontSize": 0.05,
+        "maxWidth": 0.86,
         "fontWeight": 800,
         "strokeWidth": 0.006,
         "strokeColor": "#000000",
@@ -98,6 +105,15 @@ def _command(tool: str, args: dict[str, Any], params: dict[str, Any]) -> ConcatC
     if project_path:
         payload["path"] = str(project_path)
     return ConcatCommand(tool=tool, args=payload)
+
+
+def _fill_scale(item: RenderItem, width: int, height: int) -> float:
+    """Hệ số phóng để nguồn khác tỉ lệ phủ kín khung (scale 1 = vừa khung, có viền)."""
+    w, h = _get(item, "media_width"), _get(item, "media_height")
+    if not w or not h:
+        return 1.0
+    src, frame = w / h, width / height
+    return max(src / frame, frame / src)
 
 
 def _timeline_duration(item: RenderItem) -> float:
@@ -279,6 +295,11 @@ def compile_plan(spec: RecipeSpec, plan: RenderPlan) -> list[ConcatCommand]:
                     },
                     params,
                 )
+            )
+        fill = _fill_scale(item, width, height) if params.get("fit", "fill") == "fill" else 1.0
+        if fill > 1.001:
+            commands.append(
+                _command("clip_transform", {"clipId": clip_ref, "scale": round(fill, 4)}, params)
             )
         speed = float(_get(item, "speed", 1.0) or 1.0)
         if abs(speed - 1.0) > 0.001 and speed > 0:

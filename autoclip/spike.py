@@ -15,13 +15,13 @@ from pathlib import Path
 from typing import Any
 
 from autoclip.concat_client import ConcatError, SyncConcatClient
+from autoclip.concat_client.executor import export_mp4
 from autoclip.config import Settings, get_settings
 from autoclip.ingest import probe
 
 log = logging.getLogger(__name__)
 
 WIDTH, HEIGHT, FPS = 1080, 1920, 30
-EXPORT_POLL_SEC = 600.0
 
 
 @dataclass
@@ -45,18 +45,6 @@ def _require(result: Any, key: str, tool: str) -> Any:
     if isinstance(result, dict) and key in result:
         return result[key]
     raise ConcatError(tool, f"kết quả thiếu '{key}': {result!r}")
-
-
-def _export_done(status: Any) -> tuple[bool, str | None]:
-    """(xong chưa, lỗi nếu có) từ kết quả export_wait/export_status."""
-    if not isinstance(status, dict):
-        return False, None
-    state = str(status.get("state") or status.get("status") or "").lower()
-    if state in {"done", "finished", "complete", "completed", "succeeded"}:
-        return True, None
-    if state in {"failed", "error", "cancelled", "canceled"}:
-        return True, str(status.get("error") or status.get("message") or state)
-    return False, None
 
 
 def run_spike(
@@ -136,25 +124,7 @@ def run_spike(
             build_sec = time.perf_counter() - t0
 
             t1 = time.perf_counter()
-            job = str(
-                _require(
-                    cc.call_tool("export_start", {"path": path, "output": str(output)}),
-                    "job",
-                    "export_start",
-                )
-            )
-            while True:
-                status = cc.call_tool(
-                    "export_wait",
-                    {"job": job, "timeoutSeconds": EXPORT_POLL_SEC},
-                    timeout=EXPORT_POLL_SEC + 60,
-                )
-                done, error = _export_done(status)
-                if error:
-                    raise ConcatError("export_wait", error)
-                if done:
-                    break
-                log.info("export đang chạy: %s", status)
+            export_mp4(cc, path, str(output))
             render_sec = time.perf_counter() - t1
         finally:
             try:

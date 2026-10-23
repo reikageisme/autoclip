@@ -151,6 +151,8 @@
       "duration": 2.1,
       "style": {
         "fontWeight": 800,
+        "fontSize": 0.055,
+        "maxWidth": 0.86,
         "strokeWidth": 0.008,
         "strokeColor": "#000000",
         "fontFamily": "Inter",
@@ -178,7 +180,8 @@
         }
       ],
       "style": {
-        "fontSize": 0.065,
+        "fontSize": 0.05,
+        "maxWidth": 0.86,
         "fontWeight": 800,
         "strokeWidth": 0.006,
         "strokeColor": "#000000",

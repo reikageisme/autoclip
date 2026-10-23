@@ -186,6 +186,9 @@ class RenderItem(_Model):
     src_end: float
     media_duration: float | None = None
     """Độ dài file nguồn (ClipInfo.duration) — compiler cần để cắt đuôi theo `src_end`."""
+    media_width: int | None = None
+    media_height: int | None = None
+    """Kích thước nguồn — để phóng cho kín khung khi tỉ lệ khác khung output."""
     speed: float = 1.0
     transition: str | None = None
     """Transition vào item này; None = cut."""

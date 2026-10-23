@@ -187,3 +187,13 @@ def test_missing_media_duration_raises() -> None:
     plan.items[0].media_duration = None
     with pytest.raises(ValueError):
         compile_plan(spec, plan)
+
+
+def test_narrow_source_is_scaled_to_fill_frame() -> None:
+    spec = extract_recipe(load(FIXTURES / "basic"))
+    plan = _plan()
+    plan.items[0].media_width, plan.items[0].media_height = 884, 1918
+    plan.items[1].media_width, plan.items[1].media_height = 1080, 1920
+    commands = compile_plan(spec, plan)
+    scales = {c.args["clipId"]: c.args["scale"] for c in commands if c.tool == "clip_transform"}
+    assert scales == {"@clip:0": round((1080 / 1920) / (884 / 1918), 4)}
