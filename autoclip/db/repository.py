@@ -58,6 +58,11 @@ class SqlClipRepository:
             row = s.scalar(select(Clip).where(Clip.sha1 == sha1))
             return _clip_info(row) if row else None
 
+    def get_clip(self, clip_id: int) -> ClipInfo | None:
+        with self._sessions() as s:
+            row = s.get(Clip, clip_id)
+            return _clip_info(row) if row else None
+
     def add_clip(self, clip: ClipInfo) -> ClipInfo:
         with self._sessions.begin() as s:
             existing = s.scalar(select(Clip).where(Clip.sha1 == clip.sha1))

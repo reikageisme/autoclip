@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from autoclip.llm import LLMClient
 from autoclip.qa.frames import grab_frame
 from autoclip.qa.score import VisionLLMScorer, evaluate
 
@@ -73,7 +74,7 @@ def test_vision_failure_can_reject_render(qa_media: dict[str, Path]) -> None:
 def test_vision_scorer_unavailable_without_key(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-    scorer = VisionLLMScorer(provider="openai")
+    scorer = VisionLLMScorer(llm=LLMClient("none", None))
     assert scorer.available is False
     score, notes = scorer.score([])
     assert score == 0.0

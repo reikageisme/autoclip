@@ -36,18 +36,47 @@
     "tool": "clips_add_sequence",
     "args": {
       "mediaIds": [
-        "C:/media/hook.mp4",
-        "C:/media/body.mp4",
-        "C:/media/outro.mp4"
+        "@media:C:/media/hook.mp4"
       ],
       "start": 0.0,
+      "@as": "clip:0",
+      "path": "D:/work/autoclip/data/tmp/basic"
+    }
+  },
+  {
+    "tool": "clips_add_sequence",
+    "args": {
+      "mediaIds": [
+        "@media:C:/media/body.mp4"
+      ],
+      "start": 2.0,
+      "@as": "clip:1",
+      "path": "D:/work/autoclip/data/tmp/basic"
+    }
+  },
+  {
+    "tool": "clip_trim",
+    "args": {
+      "clipId": "@clip:1",
+      "edge": "start",
+      "delta": 1.5,
+      "ripple": true,
+      "path": "D:/work/autoclip/data/tmp/basic"
+    }
+  },
+  {
+    "tool": "clip_trim",
+    "args": {
+      "clipId": "@clip:1",
+      "edge": "end",
+      "delta": -6.5,
       "path": "D:/work/autoclip/data/tmp/basic"
     }
   },
   {
     "tool": "clip_speed",
     "args": {
-      "clipId": "2",
+      "clipId": "@clip:1",
       "speed": 1.3,
       "path": "D:/work/autoclip/data/tmp/basic"
     }
@@ -55,7 +84,7 @@
   {
     "tool": "clip_update",
     "args": {
-      "clipId": "2",
+      "clipId": "@clip:1",
       "patch": {
         "transitionIn": {
           "id": "concat.zoom-transition",
@@ -68,7 +97,7 @@
   {
     "tool": "keyframe_set",
     "args": {
-      "clipId": "2",
+      "clipId": "@clip:1",
       "property": "scale",
       "at": 0.0,
       "value": 1.0,
@@ -78,7 +107,7 @@
   {
     "tool": "keyframe_set",
     "args": {
-      "clipId": "2",
+      "clipId": "@clip:1",
       "property": "scale",
       "at": 1.0,
       "value": 1.08,
@@ -86,25 +115,22 @@
     }
   },
   {
-    "tool": "clips_move",
+    "tool": "clips_add_sequence",
     "args": {
-      "moves": [
-        {
-          "clipId": "1",
-          "start": 0.0,
-          "trackId": ""
-        },
-        {
-          "clipId": "2",
-          "start": 2.0,
-          "trackId": ""
-        },
-        {
-          "clipId": "3",
-          "start": 5.077,
-          "trackId": ""
-        }
+      "mediaIds": [
+        "@media:C:/media/outro.mp4"
       ],
+      "start": 5.077,
+      "@as": "clip:2",
+      "path": "D:/work/autoclip/data/tmp/basic"
+    }
+  },
+  {
+    "tool": "clip_trim",
+    "args": {
+      "clipId": "@clip:2",
+      "edge": "end",
+      "delta": -4.0,
       "path": "D:/work/autoclip/data/tmp/basic"
     }
   },
@@ -112,6 +138,7 @@
     "tool": "effect_layer_add",
     "args": {
       "effectId": "concat.vignette",
+      "name": "concat.vignette",
       "start": 0.0,
       "duration": 7.0,
       "path": "D:/work/autoclip/data/tmp/basic"

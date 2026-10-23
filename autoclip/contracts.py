@@ -91,6 +91,8 @@ class ClipRepository(Protocol):
 
     def get_clip_by_sha1(self, sha1: str) -> ClipInfo | None: ...
 
+    def get_clip(self, clip_id: int) -> ClipInfo | None: ...
+
     def add_clip(self, clip: ClipInfo) -> ClipInfo:
         """Lưu clip, trả về bản có `id`. Trùng sha1 → trả về bản đã có, không tạo mới."""
         ...
@@ -182,6 +184,8 @@ class RenderItem(_Model):
     clip_path: str
     src_start: float
     src_end: float
+    media_duration: float | None = None
+    """Độ dài file nguồn (ClipInfo.duration) — compiler cần để cắt đuôi theo `src_end`."""
     speed: float = 1.0
     transition: str | None = None
     """Transition vào item này; None = cut."""

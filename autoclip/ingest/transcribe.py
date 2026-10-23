@@ -28,11 +28,11 @@ def assign_transcript(
     scene_bounds: Sequence[tuple[float, float]],
     whisper_segments: Iterable[TranscriptSegment],
 ) -> list[str]:
-    """Assign each whisper segment to the scene with the largest overlap.
+    """Assign each piece (ideally a single word) to the scene with the largest overlap.
 
-    Every whisper segment is used at most once, so text does not leak across
-    scene boundaries.  Segments without overlap go to the scene containing
-    their midpoint.  Text per scene is joined in chronological order.
+    Feed word-level pieces: a whole whisper sentence often spans several scenes
+    and would otherwise land in only one of them.  Every piece is used at most
+    once; pieces without overlap go to the scene containing their midpoint.
     """
     bounds = [(float(start), float(end)) for start, end in scene_bounds]
     pieces: list[list[tuple[float, str]]] = [[] for _ in bounds]
@@ -86,6 +86,8 @@ class Transcriber:
         self.beam_size = beam_size
         self.vad_filter = vad_filter
         self.strict = strict
+        self.last_error: str | None = None
+        """Lỗi của lần transcripts_for gần nhất (khi strict=False), để pipeline ghi báo cáo."""
         self._model: Any | None = None
 
     @classmethod
@@ -131,28 +133,39 @@ class Transcriber:
             language=self.language,
             beam_size=self.beam_size,
             vad_filter=self.vad_filter,
+            word_timestamps=True,
         )
-        return [
-            TranscriptSegment(
-                start=float(segment.start),
-                end=float(segment.end),
-                text=normalize_text(segment.text),
-            )
-            for segment in segments
-        ]
+        pieces: list[TranscriptSegment] = []
+        for segment in segments:
+            words = getattr(segment, "words", None) or []
+            if words:
+                pieces.extend(
+                    TranscriptSegment(float(w.start), float(w.end), normalize_text(w.word))
+                    for w in words
+                    if normalize_text(w.word)
+                )
+            else:
+                pieces.append(
+                    TranscriptSegment(
+                        float(segment.start), float(segment.end), normalize_text(segment.text)
+                    )
+                )
+        return pieces
 
     def transcripts_for(
         self,
         path: str | Path,
         scene_bounds: Sequence[tuple[float, float]],
     ) -> list[str]:
+        self.last_error = None
         if not self.enabled:
             return ["" for _ in scene_bounds]
         try:
             segments = self.transcribe(path)
-        except Exception:
+        except Exception as exc:
             if self.strict:
                 raise
-            logger.exception("transcription failed for %s; continuing without text", path)
+            self.last_error = f"{type(exc).__name__}: {exc}"
+            logger.warning("transcription failed for %s; continuing without text: %s", path, exc)
             return ["" for _ in scene_bounds]
         return assign_transcript(scene_bounds, segments)

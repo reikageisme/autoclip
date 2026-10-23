@@ -46,9 +46,15 @@ class Settings(BaseSettings):
 
     # --- Ingest ---
     min_scene_sec: float = 0.8
+    scene_threshold: float = 27.0
+    frames_per_segment: int = 3
     whisper_enabled: bool = True
     whisper_model: str = "small"
+    """small | medium | large-v3: lớn hơn thì chép tiếng Việt chuẩn hơn, chậm hơn trên CPU."""
     whisper_device: str = "auto"
+    whisper_compute_type: str = "int8"
+    whisper_language: str | None = "vi"
+    """Ép ngôn ngữ; để trống = tự nhận (hay nhầm với video chỉ có nhạc)."""
     phash_threshold: int = 6
     hook_weights: dict[str, float] = Field(
         default_factory=lambda: {"motion": 0.4, "face": 0.35, "speech": 0.25}

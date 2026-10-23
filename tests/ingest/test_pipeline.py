@@ -1,6 +1,5 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
-import dataclasses
 import shutil
 from pathlib import Path
 from typing import Any
@@ -20,31 +19,19 @@ class InMemoryRepo:
                 return clip
         return None
 
+    def get_clip(self, clip_id: int) -> ClipInfo | None:
+        return next((c for i, c in self.clips if i == clip_id), None)
+
     def add_clip(self, clip: ClipInfo) -> ClipInfo:
         clip_id = len(self.clips) + 1
-        if hasattr(clip, "model_copy"):
-            saved = clip.model_copy(update={"id": clip_id})
-        else:
-            saved = dataclasses.replace(clip, id=clip_id)
+        saved = clip.model_copy(update={"id": clip_id})
         self.clips.append((clip_id, saved))
         return saved
 
-    def add_segments(
-        self, clip_id: int, segments: list[SegmentInfo]
-    ) -> list[SegmentInfo]:
+    def add_segments(self, clip_id: int, segments: list[SegmentInfo]) -> list[SegmentInfo]:
         stored = list(segments)
         self.segments[clip_id] = stored
         return stored
-
-
-class SingleArgumentRepo(InMemoryRepo):
-    def __init__(self) -> None:
-        super().__init__()
-        self.received: list[SegmentInfo] = []
-
-    def add_segments(self, segments: list[SegmentInfo]) -> list[SegmentInfo]:  # type: ignore[override]
-        self.received.extend(segments)
-        return list(segments)
 
 
 def _options(tmp_path: Path, **overrides: Any) -> IngestOptions:
@@ -124,9 +111,7 @@ def test_ingest_folder_writes_through_repo_and_is_idempotent(
     assert len(repo.clips) == 2
 
 
-def test_ingest_skips_duplicate_content(
-    tmp_path: Path, media_files: dict[str, Path]
-) -> None:
+def test_ingest_skips_duplicate_content(tmp_path: Path, media_files: dict[str, Path]) -> None:
     folder = tmp_path / "dupes"
     folder.mkdir()
     _copy(media_files["testsrc"], folder / "a.mp4")
@@ -166,29 +151,13 @@ def test_ingest_falls_back_to_whole_clip_when_scene_detection_fails(
         raise RuntimeError("no detector")
 
     repo = InMemoryRepo()
-    report = ingest_folder(
-        folder, repo, _options(tmp_path), scenes_fn=exploding_scenes
-    )
+    report = ingest_folder(folder, repo, _options(tmp_path), scenes_fn=exploding_scenes)
     assert report.clips_added == 1
     assert report.segments_added == 1
     assert len(repo.segments[1]) == 1
 
 
-def test_ingest_supports_single_argument_add_segments(
-    tmp_path: Path, media_files: dict[str, Path]
-) -> None:
-    folder = tmp_path / "single"
-    folder.mkdir()
-    _copy(media_files["silent"], folder / "clip.mp4")
-    repo = SingleArgumentRepo()
-    report = ingest_folder(folder, repo, _options(tmp_path), scenes_fn=_fake_scenes)
-    assert report.clips_added == 1
-    assert len(repo.received) == 2
-
-
-def test_ingest_computes_phash_when_enabled(
-    tmp_path: Path, media_files: dict[str, Path]
-) -> None:
+def test_ingest_computes_phash_when_enabled(tmp_path: Path, media_files: dict[str, Path]) -> None:
     folder = tmp_path / "hash"
     folder.mkdir()
     _copy(media_files["testsrc"], folder / "clip.mp4")
@@ -201,4 +170,3 @@ def test_ingest_computes_phash_when_enabled(
     )
     assert report.segments_added >= 1
     assert all(segment.phash for segments in repo.segments.values() for segment in segments)
-

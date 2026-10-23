@@ -1,4 +1,4 @@
-﻿"""Trích recipe từ draft CapCut và báo cáo nhanh một thư mục samples.
+"""Trích recipe từ draft CapCut và báo cáo nhanh một thư mục samples.
 
 ``extract_recipe`` chỉ đọc model ``CapCutDraft`` đã parse, không chạm file.
 ``report`` duyệt từng thư mục con, chịu được draft mã hoá/hỏng và luôn trả về

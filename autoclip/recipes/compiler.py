@@ -3,17 +3,19 @@
 Hàm ``compile_plan`` là hàm thuần: không I/O, không gọi Concat, không đọc file.
 Mọi thời gian là giây; vị trí/kích thước text là tỉ lệ 0–1 của khung hình.
 
-Quy ước thực thi (do ``RenderPlan`` không chứa id của Concat):
+Quy ước thực thi (``RenderPlan`` không biết id mà Concat sẽ sinh ra):
 
-- ``RenderItem.segment_id`` được dùng làm ``clipId``; nếu None thì dùng
-  ``segment-<index>``. Executor phải map id này sang clip id thật sau khi thêm.
-- ``RenderItem.clip_path`` được dùng làm ``mediaId`` trong lệnh đặt clip.
-- ``params["project_path"]`` (tuỳ chọn) được chèn vào mọi lệnh dưới khoá
-  ``path``; không có thì client Concat tự chèn.
+- Tham chiếu là chuỗi giữ chỗ, executor (``autoclip.concat_client.executor``) thay
+  bằng id thật: ``@media:<clip_path>`` → ``createdId`` của ``media_import`` file đó;
+  ``@clip:<i>`` → clip thứ ``i`` của plan.
+- Khoá bắt đầu bằng ``@`` trong ``args`` là chỉ thị cho executor, không gửi tới
+  Concat: ``"@as": "clip:<i>"`` ghi ``createdId`` của lệnh vào tham chiếu đó.
+- ``params["project_path"]`` (tuỳ chọn) được chèn vào mọi lệnh dưới khoá ``path``;
+  không có thì executor tự chèn.
 
-Giả định đã ghi trong báo cáo: ``src_end`` là mép cuối của media nguồn. Nếu
-planner muốn cắt lửng giữa media, cần bổ sung ``media_duration`` vào
-``RenderItem`` (yêu cầu gửi lead).
+Mỗi item được đặt riêng tại con trỏ timeline (``clips_add_sequence`` một media),
+cắt đầu theo ``src_start``, cắt đuôi theo ``src_end`` (cần ``media_duration``),
+rồi mới đổi tốc độ — nên clip sau luôn bắt đầu đúng chỗ clip trước kết thúc.
 """
 
 from __future__ import annotations
@@ -98,20 +100,13 @@ def _command(tool: str, args: dict[str, Any], params: dict[str, Any]) -> ConcatC
     return ConcatCommand(tool=tool, args=payload)
 
 
-def _clip_id(item: RenderItem, index: int) -> str:
-    segment_id = _get(item, "segment_id")
-    return str(segment_id) if segment_id is not None else f"segment-{index}"
-
-
 def _timeline_duration(item: RenderItem) -> float:
     speed = float(_get(item, "speed", 1.0) or 1.0)
     if speed <= 0:
         speed = 1.0
     source = float(_get(item, "src_end", 0.0)) - float(_get(item, "src_start", 0.0))
     if source <= 0:
-        raise ValueError(
-            f"RenderItem {_get(item, 'segment_id')!r} has src_end <= src_start"
-        )
+        raise ValueError(f"RenderItem {_get(item, 'segment_id')!r} has src_end <= src_start")
     return source / speed
 
 
@@ -236,29 +231,36 @@ def compile_plan(spec: RecipeSpec, plan: RenderPlan) -> list[ConcatCommand]:
             seen_paths.add(path)
             commands.append(_command("media_import", {"file": path}, params))
 
-    sequence_start = float(params.get("start", 0.0) or 0.0)
-    commands.append(
-        _command(
-            "clips_add_sequence",
-            {
-                "mediaIds": [str(_get(item, "clip_path", "")) for item in items],
-                "start": round(sequence_start, 3),
-            },
-            params,
-        )
-    )
-
     role_indexes: dict[str, int] = {}
-    speed_changed = False
+    cursor = float(params.get("start", 0.0) or 0.0)
     for index, item in enumerate(items):
-        clip_id = _clip_id(item, index)
+        clip_ref = f"@clip:{index}"
         src_start = float(_get(item, "src_start", 0.0) or 0.0)
-        if src_start > 0:
+        src_end = float(_get(item, "src_end", 0.0) or 0.0)
+        media_duration = _get(item, "media_duration")
+        if media_duration is None:
+            raise ValueError(f"RenderItem {index} thiếu media_duration (cần để cắt đuôi)")
+        media_duration = float(media_duration)
+        if src_end > media_duration + 0.01:
+            raise ValueError(f"RenderItem {index}: src_end {src_end} > media {media_duration}")
+
+        commands.append(
+            _command(
+                "clips_add_sequence",
+                {
+                    "mediaIds": [f"@media:{_get(item, 'clip_path', '')}"],
+                    "start": round(cursor, 3),
+                    "@as": f"clip:{index}",
+                },
+                params,
+            )
+        )
+        if src_start > 0.001:
             commands.append(
                 _command(
                     "clip_trim",
                     {
-                        "clipId": clip_id,
+                        "clipId": clip_ref,
                         "edge": "start",
                         "delta": round(src_start, 3),
                         "ripple": True,
@@ -266,29 +268,33 @@ def compile_plan(spec: RecipeSpec, plan: RenderPlan) -> list[ConcatCommand]:
                     params,
                 )
             )
-        speed = float(_get(item, "speed", 1.0) or 1.0)
-        if abs(speed - 1.0) > 0.001 and speed > 0:
-            speed_changed = True
+        if media_duration - src_end > 0.001:
             commands.append(
                 _command(
-                    "clip_speed",
-                    {"clipId": clip_id, "speed": round(speed, 4)},
+                    "clip_trim",
+                    {
+                        "clipId": clip_ref,
+                        "edge": "end",
+                        "delta": round(src_end - media_duration, 3),
+                    },
                     params,
                 )
             )
-        transition = _transition_for(spec, item, role_indexes)
+        speed = float(_get(item, "speed", 1.0) or 1.0)
+        if abs(speed - 1.0) > 0.001 and speed > 0:
+            commands.append(
+                _command("clip_speed", {"clipId": clip_ref, "speed": round(speed, 4)}, params)
+            )
+        transition = _transition_for(spec, item, role_indexes) if index > 0 else None
         if transition:
             duration = min(0.4, max(0.1, _timeline_duration(item) / 4.0))
             commands.append(
                 _command(
                     "clip_update",
                     {
-                        "clipId": clip_id,
+                        "clipId": clip_ref,
                         "patch": {
-                            "transitionIn": {
-                                "id": transition,
-                                "duration": round(duration, 3),
-                            }
+                            "transitionIn": {"id": transition, "duration": round(duration, 3)}
                         },
                     },
                     params,
@@ -299,7 +305,7 @@ def compile_plan(spec: RecipeSpec, plan: RenderPlan) -> list[ConcatCommand]:
                     _command(
                         "keyframe_set",
                         {
-                            "clipId": clip_id,
+                            "clipId": clip_ref,
                             "property": frame["property"],
                             "at": frame["at"],
                             "value": frame["value"],
@@ -307,25 +313,7 @@ def compile_plan(spec: RecipeSpec, plan: RenderPlan) -> list[ConcatCommand]:
                         params,
                     )
                 )
-
-    starts = _timeline_starts(items, sequence_start)
-    if speed_changed:
-        commands.append(
-            _command(
-                "clips_move",
-                {
-                    "moves": [
-                        {
-                            "clipId": _clip_id(item, index),
-                            "start": round(starts[index], 3),
-                            "trackId": "",
-                        }
-                        for index, item in enumerate(items)
-                    ]
-                },
-                params,
-            )
-        )
+        cursor += _timeline_duration(item)
 
     effects = params.get("effects") or []
     if isinstance(effects, list):
@@ -343,6 +331,7 @@ def compile_plan(spec: RecipeSpec, plan: RenderPlan) -> list[ConcatCommand]:
                     "effect_layer_add",
                     {
                         "effectId": str(effect_id),
+                        "name": str(effect.get("name") or effect_id),
                         "start": round(start, 3),
                         "duration": round(max(0.1, duration), 3),
                     },

@@ -43,9 +43,7 @@ def test_extract_thumbnail_missing_video(tmp_path: Path) -> None:
         extract_thumbnail(tmp_path / "missing.mp4", 0.0, tmp_path / "out.jpg")
 
 
-def test_make_thumbnail_uses_decoded_frame(
-    tmp_path: Path, media_files: dict[str, Path]
-) -> None:
+def test_make_thumbnail_uses_decoded_frame(tmp_path: Path, media_files: dict[str, Path]) -> None:
     frame = np.full((32, 18, 3), 200, dtype=np.uint8)
     result = make_thumbnail(
         media_files["testsrc"],

@@ -2,30 +2,11 @@
 
 from __future__ import annotations
 
-import importlib.util
 import shutil
 import subprocess
-import sys
 from pathlib import Path
 
 import pytest
-
-
-def _install_contract_stub() -> None:
-    repo_root = Path(__file__).resolve().parents[2]
-    if str(repo_root) not in sys.path:
-        sys.path.insert(0, str(repo_root))
-    stub_path = repo_root / "tests" / "fixtures" / "media" / "contract_stub.py"
-    spec = importlib.util.spec_from_file_location("_media_contract_stub", stub_path)
-    if spec is None or spec.loader is None:  # pragma: no cover - defensive
-        raise RuntimeError(f"cannot load contract stub from {stub_path}")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    module.install_if_missing()
-
-
-_install_contract_stub()
 
 
 def _ffmpeg() -> str:

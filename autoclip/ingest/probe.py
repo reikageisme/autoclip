@@ -13,8 +13,6 @@ from typing import Any
 
 from autoclip.contracts import ClipInfo
 
-from ._compat import construct
-
 logger = logging.getLogger(__name__)
 
 DEFAULT_CHUNK_SIZE = 1024 * 1024
@@ -135,8 +133,7 @@ def probe(path: str | Path) -> ClipInfo:
         has_audio,
         sha1,
     )
-    return construct(
-        ClipInfo,
+    return ClipInfo(
         path=str(clip_path.resolve()),
         sha1=sha1,
         duration=duration,

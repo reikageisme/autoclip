@@ -11,6 +11,7 @@ from autoclip.ingest.tagging import (
     combine_hook_score,
     frame_statistics,
 )
+from autoclip.llm import LLMClient
 
 
 def _frame(value: int, size: int = 32) -> np.ndarray:
@@ -64,7 +65,7 @@ def test_heuristic_tagger_without_frames() -> None:
 def test_vision_tagger_is_skipped_without_key(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-    tagger = VisionLLMTagger(provider="openai")
+    tagger = VisionLLMTagger(llm=LLMClient("none", None))
     assert tagger.available is False
     with pytest.raises(TaggerUnavailable):
         tagger.tag([_frame(10)], "text")

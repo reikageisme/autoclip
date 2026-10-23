@@ -6,13 +6,11 @@ import base64
 import io
 import json
 import logging
-import os
 import re
 from collections.abc import Callable, Sequence
 from typing import Any
 
 from autoclip.contracts import QAResult
-from autoclip.ingest._compat import construct
 
 from .checks import (
     CheckResult,
@@ -139,8 +137,7 @@ def evaluate(
             score, passed, notes, _call_vision(vision_scorer, frames)
         )
 
-    return construct(
-        QAResult,
+    return QAResult(
         score=round(max(0.0, min(1.0, score)), 4),
         passed=bool(passed),
         notes=notes,
@@ -181,127 +178,33 @@ def _parse_vision_payload(text: str) -> tuple[float, list[str]]:
 
 
 class VisionLLMScorer:
-    """Optional vision model scorer (OpenAI or Anthropic), skipped without a key."""
+    """Chấm điểm bằng vision LLM theo config (VISION_MODEL); không cấu hình thì bỏ qua."""
 
-    def __init__(
-        self,
-        provider: str = "openai",
-        model: str | None = None,
-        api_key: str | None = None,
-        timeout: float = 30.0,
-        client: Callable[[Sequence[Any]], Any] | None = None,
-    ) -> None:
-        self.provider = provider.lower()
-        self.model = model or (
-            "claude-3-5-haiku-latest" if self.provider == "anthropic" else "gpt-4o-mini"
-        )
-        self.api_key = api_key or (
-            os.environ.get("ANTHROPIC_API_KEY")
-            if self.provider == "anthropic"
-            else os.environ.get("OPENAI_API_KEY")
-        )
-        self.timeout = timeout
-        self._client = client
+    def __init__(self, llm: Any = None) -> None:
+        if llm is None:
+            from autoclip.llm import LLMClient
+
+            llm = LLMClient.from_settings(vision=True)
+        self._llm = llm
 
     @property
     def available(self) -> bool:
-        return self._client is not None or bool(self.api_key)
+        return bool(self._llm and self._llm.available)
 
     def score(self, frames: Sequence[Any]) -> tuple[float, list[str]]:
-        if self._client is not None:
-            result = self._client(frames)
-            if isinstance(result, tuple):
-                return float(result[0]), [str(item) for item in result[1]]
-            if isinstance(result, (int, float)):
-                return float(result), []
-            return 0.0, ["invalid vision client result"]
-        if not self.api_key:
-            return 0.0, ["vision scorer unavailable (no API key)"]
+        if not self.available:
+            return 0.0, ["vision scorer unavailable"]
         encoded = _frames_to_jpeg_b64(frames)
         if encoded is None:
-            return 0.0, ["vision scorer unavailable (no frames)"]
+            return 0.0, ["no frames for vision scoring"]
         prompt = (
             "Score this rendered short-form video keyframe from 0 to 1 for visual "
             "quality: composition, readability, and whether it looks broken. "
             'Return ONLY JSON: {"score": number, "notes": ["..."]}.'
         )
         try:
-            if self.provider == "anthropic":
-                text = self._call_anthropic(encoded, prompt)
-            else:
-                text = self._call_openai(encoded, prompt)
+            text = self._llm.chat(prompt, image_jpeg_b64=encoded, max_tokens=200)
         except Exception as exc:
-            logger.exception("vision QA request failed")
-            return 0.0, [f"vision request failed: {exc}"]
+            logger.warning("vision scoring failed: %s", exc)
+            return 0.0, [f"vision scoring failed: {exc}"]
         return _parse_vision_payload(text)
-
-    def _request(self, request: Any) -> dict[str, Any]:
-        import urllib.request
-
-        with urllib.request.urlopen(request, timeout=self.timeout) as response:
-            return json.loads(response.read().decode("utf-8"))
-
-    def _call_openai(self, encoded: str, prompt: str) -> str:
-        import urllib.request
-
-        payload = {
-            "model": self.model,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": prompt},
-                        {
-                            "type": "image_url",
-                            "image_url": {"url": f"data:image/jpeg;base64,{encoded}"},
-                        },
-                    ],
-                }
-            ],
-            "temperature": 0,
-        }
-        request = urllib.request.Request(
-            "https://api.openai.com/v1/chat/completions",
-            data=json.dumps(payload).encode("utf-8"),
-            headers={
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {self.api_key}",
-            },
-        )
-        data = self._request(request)
-        return str(data["choices"][0]["message"]["content"])
-
-    def _call_anthropic(self, encoded: str, prompt: str) -> str:
-        import urllib.request
-
-        payload = {
-            "model": self.model,
-            "max_tokens": 200,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "image",
-                            "source": {
-                                "type": "base64",
-                                "media_type": "image/jpeg",
-                                "data": encoded,
-                            },
-                        },
-                        {"type": "text", "text": prompt},
-                    ],
-                }
-            ],
-        }
-        request = urllib.request.Request(
-            "https://api.anthropic.com/v1/messages",
-            data=json.dumps(payload).encode("utf-8"),
-            headers={
-                "Content-Type": "application/json",
-                "x-api-key": str(self.api_key),
-                "anthropic-version": "2023-06-01",
-            },
-        )
-        data = self._request(request)
-        return str(data["content"][0]["text"])

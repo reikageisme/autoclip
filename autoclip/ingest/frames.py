@@ -59,9 +59,7 @@ def grab_frame(path: str | Path, timestamp: float, timeout: float = 30.0) -> Any
         "-",
     ]
     try:
-        completed = subprocess.run(
-            command, capture_output=True, timeout=timeout, check=False
-        )
+        completed = subprocess.run(command, capture_output=True, timeout=timeout, check=False)
     except (OSError, subprocess.SubprocessError) as exc:
         raise FrameExtractError(f"ffmpeg could not grab frame from {path}: {exc}") from exc
     if completed.returncode != 0 or not completed.stdout:

@@ -118,9 +118,7 @@ class HeuristicTagger:
             return False
         if self._cascade is None:
             cascade_root = getattr(getattr(cv2, "data", None), "haarcascades", "")
-            cascade_path = os.path.join(
-                cascade_root, "haarcascade_frontalface_default.xml"
-            )
+            cascade_path = os.path.join(cascade_root, "haarcascade_frontalface_default.xml")
             if not cascade_path or not os.path.exists(cascade_path):
                 logger.debug("Haar cascade not found; face tag disabled")
                 self._cascade = False
@@ -196,37 +194,29 @@ def _parse_tag_payload(text: str) -> TagResult:
 
 
 class VisionLLMTagger:
-    """Optional vision model tagger (OpenAI or Anthropic), skipped without a key."""
+    """Tagger dùng vision LLM theo config (VISION_MODEL); không cấu hình thì `available` False."""
 
     def __init__(
         self,
-        provider: str = "openai",
-        model: str | None = None,
-        api_key: str | None = None,
-        timeout: float = 30.0,
+        llm: Any = None,
         client: Callable[[Sequence[Any], str], TagResult] | None = None,
     ) -> None:
-        self.provider = provider.lower()
-        self.model = model or (
-            "claude-3-5-haiku-latest" if self.provider == "anthropic" else "gpt-4o-mini"
-        )
-        self.api_key = api_key or (
-            os.environ.get("ANTHROPIC_API_KEY")
-            if self.provider == "anthropic"
-            else os.environ.get("OPENAI_API_KEY")
-        )
-        self.timeout = timeout
+        if llm is None and client is None:
+            from autoclip.llm import LLMClient
+
+            llm = LLMClient.from_settings(vision=True)
+        self._llm = llm
         self._client = client
 
     @property
     def available(self) -> bool:
-        return self._client is not None or bool(self.api_key)
+        return self._client is not None or bool(self._llm and self._llm.available)
 
     def tag(self, frames: Sequence[Any], transcript: str) -> TagResult:
         if self._client is not None:
             return self._client(frames, transcript)
-        if not self.api_key:
-            raise TaggerUnavailable("no vision API key configured")
+        if not self.available:
+            raise TaggerUnavailable("vision LLM chưa cấu hình (VISION_MODEL)")
         encoded = _frames_to_jpeg_b64(frames)
         if encoded is None:
             return TagResult()
@@ -234,82 +224,6 @@ class VisionLLMTagger:
             "You are tagging short-form video clips. Given the keyframe and "
             "transcript, return ONLY JSON: "
             '{"tags": ["action"|"face"|"speech"|"static"|"bright"|"dark", ...], '
-            '"hook_score": number between 0 and 1}. Transcript: '
-            + normalize_text(transcript)
+            '"hook_score": number between 0 and 1}. Transcript: ' + normalize_text(transcript)
         )
-        if self.provider == "anthropic":
-            return self._call_anthropic(encoded, prompt)
-        return self._call_openai(encoded, prompt)
-
-    def _request(self, request: Any) -> dict[str, Any]:
-        import urllib.request
-
-        with urllib.request.urlopen(request, timeout=self.timeout) as response:
-            return json.loads(response.read().decode("utf-8"))
-
-    def _call_openai(self, encoded: str, prompt: str) -> TagResult:
-        import urllib.request
-
-        payload = {
-            "model": self.model,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": prompt},
-                        {
-                            "type": "image_url",
-                            "image_url": {"url": f"data:image/jpeg;base64,{encoded}"},
-                        },
-                    ],
-                }
-            ],
-            "temperature": 0,
-        }
-        request = urllib.request.Request(
-            "https://api.openai.com/v1/chat/completions",
-            data=json.dumps(payload).encode("utf-8"),
-            headers={
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {self.api_key}",
-            },
-        )
-        data = self._request(request)
-        text = data["choices"][0]["message"]["content"]
-        return _parse_tag_payload(text)
-
-    def _call_anthropic(self, encoded: str, prompt: str) -> TagResult:
-        import urllib.request
-
-        payload = {
-            "model": self.model,
-            "max_tokens": 200,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "image",
-                            "source": {
-                                "type": "base64",
-                                "media_type": "image/jpeg",
-                                "data": encoded,
-                            },
-                        },
-                        {"type": "text", "text": prompt},
-                    ],
-                }
-            ],
-        }
-        request = urllib.request.Request(
-            "https://api.anthropic.com/v1/messages",
-            data=json.dumps(payload).encode("utf-8"),
-            headers={
-                "Content-Type": "application/json",
-                "x-api-key": str(self.api_key),
-                "anthropic-version": "2023-06-01",
-            },
-        )
-        data = self._request(request)
-        text = data["content"][0]["text"]
-        return _parse_tag_payload(text)
+        return _parse_tag_payload(self._llm.chat(prompt, image_jpeg_b64=encoded, max_tokens=200))
