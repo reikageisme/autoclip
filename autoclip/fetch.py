@@ -92,6 +92,7 @@ def fetch(
     cookies_from_browser: str | None = None,
     cookies_file: Path | None = None,
     sleep_sec: float = 3.0,
+    name: str | None = None,
     ydl_factory: Any = None,
 ) -> FetchResult:
     """Tải các link (video lẻ hoặc trang danh sách video) về `dest_root/<nguồn>/`."""
@@ -100,7 +101,8 @@ def fetch(
 
         ydl_factory = YoutubeDL
 
-    dest = dest_root / source_name(urls[0]) if urls else dest_root
+    folder = name or (source_name(urls[0]) if urls else "")
+    dest = dest_root / folder if folder else dest_root
     dest.mkdir(parents=True, exist_ok=True)
     result = FetchResult(dest=dest)
     archive = dest / ARCHIVE_NAME

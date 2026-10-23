@@ -101,6 +101,7 @@ def spike(
 def fetch(
     urls: list[str] = typer.Argument(..., help="Link video, hoặc trang Videos/Reels của page"),
     dest: Path = typer.Option(None, help="Thư mục gốc (mặc định data/source); con: <tên page>"),
+    page: str = typer.Option(None, help="Tên thư mục con (link /reel/ không chứa tên page)"),
     limit: int = typer.Option(None, help="Tải tối đa N video mỗi trang danh sách"),
     cookies_from_browser: str = typer.Option(
         None, help="Lấy cookie từ trình duyệt (chrome/edge/firefox) khi video cần đăng nhập"
@@ -128,6 +129,7 @@ def fetch(
         cookies_from_browser=cookies_from_browser,
         cookies_file=cookies,
         sleep_sec=sleep,
+        name=page,
     )
     typer.echo(f"Tải mới {len(r.downloaded)} video vào {r.dest} (đã có từ trước: {r.skipped})")
     for err in r.errors:

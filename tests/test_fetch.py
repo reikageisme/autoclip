@@ -90,3 +90,10 @@ def test_fetch_records_errors(tmp_path):
     r = fetch(["https://www.facebook.com/GiangMinhVN"], tmp_path, ydl_factory=Boom)
     assert r.downloaded == []
     assert r.errors and "blocked" in r.errors[0]
+
+
+def test_fetch_page_name_overrides_folder(tmp_path):
+    r = fetch(
+        ["https://www.facebook.com/reel/?v=9"], tmp_path, name="GiangMinhVN", ydl_factory=FakeYDL
+    )
+    assert r.dest == tmp_path / "GiangMinhVN"
