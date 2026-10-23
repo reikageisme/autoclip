@@ -13,6 +13,7 @@ dependencies = [
     "typer>=0.12",
     "fastapi>=0.115",
     "uvicorn>=0.30",
+    "httpx>=0.27",
     "scenedetect[opencv]>=0.6.4",
     "faster-whisper>=1.0",
     "imagehash>=4.3",
@@ -28,7 +29,6 @@ autoclip = "autoclip.cli:main"
 
 [dependency-groups]
 dev = [
-    "httpx>=0.27",
     "pytest>=8.0",
     "ruff>=0.6",
 ]

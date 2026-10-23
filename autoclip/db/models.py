@@ -129,3 +129,42 @@ class Metric(Base):
     avg_watch: Mapped[float | None] = mapped_column(Float)
     likes: Mapped[int | None] = mapped_column(Integer)
     captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class Publication(Base):
+    """Một lần người dùng bấm đăng/hẹn giờ đăng video lên Page Facebook."""
+
+    __tablename__ = "publications"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    render_id: Mapped[int] = mapped_column(ForeignKey("renders.id"), index=True)
+    platform: Mapped[str] = mapped_column(String(32), default="facebook")
+    page_id: Mapped[str] = mapped_column(String(64), default="")
+    caption: Mapped[str | None] = mapped_column(String)
+    scheduled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    status: Mapped[str] = mapped_column(String(16), default="scheduled", index=True)
+    """scheduled | publishing | published | failed | cancelled"""
+    fb_post_id: Mapped[str | None] = mapped_column(String(128))
+    error: Mapped[str | None] = mapped_column(String)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class BatchSchedule(Base):
+    """Lịch chạy batch do người dùng đặt; service kiểm tra mỗi 30 giây khi đang chạy."""
+
+    __tablename__ = "batch_schedules"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    recipe: Mapped[str] = mapped_column(String)
+    count: Mapped[int] = mapped_column(Integer)
+    seed: Mapped[int | None] = mapped_column(Integer)
+    options: Mapped[dict[str, Any]] = mapped_column(default=dict)
+    """use_llm, voice, workers... (cùng dạng BatchRequest)."""
+    run_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    repeat_minutes: Mapped[int] = mapped_column(Integer, default=0)
+    """0 = chạy một lần; >0 = lặp lại sau mỗi N phút."""
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)

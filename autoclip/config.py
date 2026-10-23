@@ -83,6 +83,23 @@ class Settings(BaseSettings):
     # --- Diversity (P3) ---
     no_repeat_last_n_renders: int = 50
 
+    # --- Vận hành v2 ---
+    render_workers: int = Field(1, ge=1, le=16)
+    """Số tiến trình Concat render song song (mỗi job một thư mục project riêng)."""
+    maintenance_interval_min: int = Field(30, ge=1, le=1440)
+    cleanup_proxies_days: int = Field(30, ge=0, le=3650)
+    cleanup_projects_days: int = Field(7, ge=0, le=3650)
+    cleanup_videos_days: int = Field(30, ge=0, le=3650)
+    """0 = không dọn loại đó. Video cũ bị xoá file, giữ dòng DB để đối soát."""
+    disk_warn_free_gb: float = Field(5.0, ge=0.0, le=1000.0)
+    disk_watch_paths: str = ""
+    """Thêm đường dẫn cần theo dõi, cách nhau bằng os.pathsep; trống = ổ của DATA_DIR + C:."""
+
+    # --- Đăng bài Facebook ---
+    fb_page_id: str = ""
+    fb_graph_version: str = "v23.0"
+    publish_check_sec: int = Field(30, ge=5, le=3600)
+
     @property
     def db_path(self) -> Path:
         return self.data_dir / "autoclip.db"
