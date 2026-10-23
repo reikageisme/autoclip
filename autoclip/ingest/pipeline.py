@@ -14,6 +14,7 @@ from autoclip.contracts import ClipInfo, ClipRepository, IngestError, IngestRepo
 from .dedupe import dedupe_segments, phash_from_frames
 from .frames import sample_frames
 from .probe import ProbeError, probe
+from .proxy import make_proxy, needs_proxy
 from .scenes import detect_scenes, split_long_scenes
 from .tagging import HeuristicTagger, Tagger, TagResult, VisionLLMTagger
 from .thumbs import ThumbnailError, make_thumbnail
@@ -64,6 +65,8 @@ class IngestOptions:
     tag_weights: dict[str, float] = field(default_factory=lambda: dict(DEFAULT_TAG_WEIGHTS))
     tagger: Tagger | None = None
     extensions: tuple[str, ...] = VIDEO_EXTENSIONS
+    proxy_dir: Path | None = None
+    """Có thì nguồn lớn hơn 1080p được hạ về bản làm việc 1080p ở đây (xem proxy.py)."""
 
     @classmethod
     def from_settings(cls, settings: Any) -> IngestOptions:
@@ -82,6 +85,7 @@ class IngestOptions:
             frames_per_segment=settings.frames_per_segment,
             vision_tagging=bool(settings.vision_model),
             tag_weights=dict(settings.hook_weights),
+            proxy_dir=Path(settings.data_dir) / "proxies",
         )
 
 
@@ -197,6 +201,15 @@ def ingest_folder(
                 report.clips_skipped += 1
                 logger.info("skipping already ingested clip %s", path)
                 continue
+
+            if opts.proxy_dir is not None and needs_proxy(info.width, info.height):
+                proxy = make_proxy(
+                    path, opts.proxy_dir / f"{info.sha1}.mp4", info.width, info.height
+                )
+                small = probe_fn(proxy)
+                # sha1 vẫn của file gốc: nhập lại file gốc thì nhận ra là đã có
+                info = small.model_copy(update={"sha1": info.sha1})
+                path = proxy
 
             try:
                 bounds = scenes_fn(

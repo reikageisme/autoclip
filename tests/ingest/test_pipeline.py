@@ -170,3 +170,45 @@ def test_ingest_computes_phash_when_enabled(tmp_path: Path, media_files: dict[st
     )
     assert report.segments_added >= 1
     assert all(segment.phash for segments in repo.segments.values() for segment in segments)
+
+
+def test_large_source_is_ingested_from_a_1080p_proxy(tmp_path: Path) -> None:
+    import shutil as _sh
+    import subprocess as _sp
+
+    import pytest as _pt
+
+    ffmpeg = _sh.which("ffmpeg")
+    if not ffmpeg:
+        _pt.skip("ffmpeg required")
+    folder = tmp_path / "big"
+    folder.mkdir()
+    src = folder / "uhd.mp4"
+    _sp.run(
+        [
+            ffmpeg,
+            "-v",
+            "error",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=size=1440x2560:rate=30:duration=2",
+            "-pix_fmt",
+            "yuv420p",
+            str(src),
+        ],
+        check=True,
+    )
+    repo = InMemoryRepo()
+    options = _options(tmp_path, proxy_dir=tmp_path / "proxies")
+    report = ingest_folder(folder, repo, options, scenes_fn=_fake_scenes)
+    assert report.clips_added == 1, report.errors
+    ((_, clip),) = repo.clips
+    assert (clip.width, clip.height) == (1080, 1920)
+    assert clip.path.endswith(".mp4") and "proxies" in clip.path
+    from autoclip.ingest.probe import sha1_file
+
+    assert clip.sha1 == sha1_file(src)
+    again = ingest_folder(folder, repo, options, scenes_fn=_fake_scenes)
+    assert again.clips_skipped == 1
