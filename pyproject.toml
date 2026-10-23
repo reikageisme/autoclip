@@ -20,6 +20,9 @@ dependencies = [
     "numpy>=1.26",
 ]
 
+[project.scripts]
+autoclip = "autoclip.cli:main"
+
 [dependency-groups]
 dev = [
     "pytest>=8.0",
@@ -40,6 +43,9 @@ extend-exclude = ["autoclip/db/migrations/versions"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "SIM"]
+
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = ["typer.Argument", "typer.Option"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -1,0 +1,118 @@
+"""CLI `autoclip`: ingest / capcut-report / extract / spike / concat-tools."""
+
+from __future__ import annotations
+
+import logging
+import sys
+from pathlib import Path
+
+import typer
+
+from autoclip.config import get_settings
+
+app = typer.Typer(help="AutoClip — tự sinh video ngắn từ project CapCut mẫu.", no_args_is_help=True)
+
+
+@app.callback()
+def _main(verbose: bool = typer.Option(False, "-v", "--verbose", help="Log DEBUG")) -> None:
+    logging.basicConfig(
+        level=logging.DEBUG if verbose else logging.INFO,
+        format="%(levelname)s %(name)s: %(message)s",
+    )
+    logging.getLogger("alembic").setLevel(logging.WARNING)
+
+
+@app.command()
+def ingest(
+    folder: Path = typer.Argument(..., exists=True, file_okay=False, help="Thư mục clip"),
+    whisper: bool = typer.Option(False, "--whisper/--no-whisper", help="Chép lời bằng Whisper"),
+) -> None:
+    """Ingest clip: probe, cắt cảnh, tag, phash, thumbnail → DB (bỏ qua clip đã có)."""
+    from autoclip.db import SqlClipRepository, make_engine
+    from autoclip.db.migrate import upgrade
+    from autoclip.ingest import IngestOptions, ingest_folder
+
+    settings = get_settings()
+    engine = make_engine()
+    upgrade(engine)
+    options = IngestOptions.from_settings(settings)
+    options.whisper_enabled = whisper
+    report = ingest_folder(folder, SqlClipRepository(engine), options)
+    typer.echo(
+        f"Thấy {report.clips_seen} clip: thêm {report.clips_added}, bỏ qua {report.clips_skipped}, "
+        f"{report.segments_added} segment (loại trùng {report.segments_deduped}), "
+        f"{len(report.errors)} lỗi, {report.elapsed_sec:.1f}s"
+    )
+    for err in report.errors:
+        typer.echo(f"  lỗi: {err.path}: {err.message}", err=True)
+    if report.errors:
+        raise typer.Exit(1)
+
+
+@app.command("capcut-report")
+def capcut_report(
+    samples: Path = typer.Argument(Path("samples"), help="Thư mục chứa các draft CapCut"),
+    output: Path = typer.Option(None, "-o", help="File markdown (mặc định data/capcut_report.md)"),
+) -> None:
+    """Báo cáo mọi draft CapCut: đọc được / mã hoá / hỏng, số track, segment, text, effect."""
+    from autoclip.recipes.extract import write_report
+
+    path = write_report(samples, output or get_settings().data_dir / "capcut_report.md")
+    typer.echo(f"Đã ghi báo cáo: {path}")
+
+
+@app.command()
+def extract(
+    draft_dir: Path = typer.Argument(None, help="Một thư mục draft CapCut"),
+    output: Path = typer.Option(None, "-o", help="File recipe.json (mặc định recipes/<tên>.json)"),
+    all_in: Path = typer.Option(None, "--all", help="Trích mọi draft đọc được trong thư mục này"),
+) -> None:
+    """Trích recipe.json từ draft CapCut."""
+    from autoclip.recipes import extract as ex
+
+    if all_in is not None:
+        argv = ["--all", str(all_in)]
+    elif draft_dir is not None:
+        argv = [str(draft_dir)] + (["-o", str(output)] if output else [])
+    else:
+        raise typer.BadParameter("cần <draft_dir> hoặc --all <thư mục>")
+    raise typer.Exit(ex.main(argv))
+
+
+@app.command()
+def spike(
+    clips: list[Path] = typer.Argument(None, help="Clip để nối (mặc định data/testclips/*.mp4)"),
+    title: str = typer.Option("AutoClip spike", help="Title ở đầu video"),
+) -> None:
+    """Dựng 1080x1920 từ các clip + title + captions qua Concat headless, export MP4."""
+    from autoclip.spike import run_spike
+
+    clips = clips or sorted((get_settings().data_dir / "testclips").glob("*.mp4"))[:3]
+    if not clips:
+        raise typer.BadParameter("không có clip: truyền đường dẫn hoặc tạo data/testclips/*.mp4")
+    r = run_spike(clips, title=title)
+    typer.echo(f"MP4:     {r.output}")
+    typer.echo(f"Video:   {r.video_sec:.2f}s từ {len(clips)} clip")
+    typer.echo(f"Dựng:    {r.build_sec:.2f}s")
+    typer.echo(f"Render:  {r.render_sec:.2f}s  ({r.render_ratio:.2f} giây render / giây video)")
+
+
+@app.command("concat-tools")
+def concat_tools() -> None:
+    """Chạy concat headless, lưu tools/list ra data/concat_tools.json."""
+    from autoclip.concat_client import SyncConcatClient
+
+    with SyncConcatClient() as cc:
+        typer.echo(f"{len(cc.tools)} tool → {get_settings().concat_tools_path}")
+
+
+def main() -> None:
+    """Entry point: console Windows mặc định cp1252, phải đổi sang UTF-8 trước khi in help."""
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8")
+    app()
+
+
+if __name__ == "__main__":
+    main()

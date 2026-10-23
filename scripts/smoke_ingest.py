@@ -1,6 +1,6 @@
 """Chạy ingest thật 2 lần trên một thư mục clip; lần 2 phải không thêm bản ghi mới.
 
-    uv run python scripts/smoke_ingest.py <folder> [--whisper]
+uv run python scripts/smoke_ingest.py <folder> [--whisper]
 """
 
 from __future__ import annotations
@@ -16,6 +16,8 @@ from autoclip.ingest import IngestOptions, ingest_folder
 
 
 def main() -> int:
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("folder")
     parser.add_argument("--whisper", action="store_true", help="bật Whisper (tải model lần đầu)")
