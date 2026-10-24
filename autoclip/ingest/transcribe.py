@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import logging
+import os
 from collections.abc import Iterable, Sequence
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -74,7 +76,7 @@ class Transcriber:
         compute_type: str = "int8",
         enabled: bool = True,
         language: str | None = None,
-        beam_size: int = 5,
+        beam_size: int = 1,
         vad_filter: bool = True,
         strict: bool = False,
     ) -> None:
@@ -89,6 +91,19 @@ class Transcriber:
         self.last_error: str | None = None
         """Lỗi của lần transcripts_for gần nhất (khi strict=False), để pipeline ghi báo cáo."""
         self._model: Any | None = None
+        self._pending: tuple[str, Future[list[TranscriptSegment]]] | None = None
+        self._pool: ThreadPoolExecutor | None = None
+
+    def prefetch(self, path: str | Path) -> None:
+        """Bắt đầu chép lời `path` ở luồng nền (chạy song song với quét hình).
+
+        `transcripts_for` cùng file sau đó sẽ dùng kết quả này thay vì chạy lại.
+        """
+        if not self.enabled:
+            return
+        if self._pool is None:
+            self._pool = ThreadPoolExecutor(1, thread_name_prefix="whisper")
+        self._pending = (str(path), self._pool.submit(self.transcribe, path))
 
     @classmethod
     def from_options(cls, options: Any) -> Transcriber:
@@ -98,7 +113,7 @@ class Transcriber:
             compute_type=getattr(options, "whisper_compute_type", "int8"),
             enabled=getattr(options, "whisper_enabled", True),
             language=getattr(options, "whisper_language", None),
-            beam_size=getattr(options, "whisper_beam_size", 5),
+            beam_size=getattr(options, "whisper_beam_size", 1),
             vad_filter=getattr(options, "whisper_vad_filter", True),
             strict=getattr(options, "whisper_strict", False),
         )
@@ -121,6 +136,9 @@ class Transcriber:
                 self.model_size,
                 device=self.device,
                 compute_type=self.compute_type,
+                # faster-whisper mặc định chỉ 4 luồng; ffmpeg quét hình chạy song song
+                # nên chừa lại một nửa số nhân cho nó
+                cpu_threads=max(4, (os.cpu_count() or 8) // 2),
             )
         return self._model
 
@@ -160,8 +178,12 @@ class Transcriber:
         self.last_error = None
         if not self.enabled:
             return ["" for _ in scene_bounds]
+        pending, self._pending = self._pending, None
         try:
-            segments = self.transcribe(path)
+            if pending is not None and pending[0] == str(path):
+                segments = pending[1].result()
+            else:
+                segments = self.transcribe(path)
         except Exception as exc:
             if self.strict:
                 raise

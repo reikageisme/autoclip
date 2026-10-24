@@ -36,12 +36,13 @@ def _scale(width: int, height: int) -> str:
 def make_proxy(
     src: Path, dest: Path, width: int, height: int, timeout: float = 4 * 3600, force: bool = False
 ) -> Path:
-    """Tạo `dest` nếu chưa có. Thử Intel QSV trước (nhanh hơn), không được thì x264."""
+    """Tạo `dest` nếu chưa có. Thử encoder phần cứng (Intel/NVIDIA/AMD) trước, cuối cùng x264."""
     if dest.is_file() and dest.stat().st_size > 0 and not force:
         return dest
     dest.parent.mkdir(parents=True, exist_ok=True)
     tmp = dest.with_suffix(".tmp.mp4")
     vf = _scale(width, height)
+    # Không dùng -hwaccel auto: đo trên 4K HEVC chậm hơn giải mã CPU 30–60% (chép khung về RAM)
     common = ["-hide_banner", "-v", "error", "-y", "-i", str(src)]
     tail = ["-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", str(tmp)]
     # Keyframe mỗi giây: Concat tua tới giữa file dài nhanh và đúng. GOP mặc định của QSV
@@ -51,6 +52,16 @@ def make_proxy(
         (
             "qsv",
             [*gop, "-vf", f"{vf},format=nv12", "-c:v", "h264_qsv", "-global_quality", "22"],
+        ),
+        (
+            "nvenc",
+            [*gop, "-vf", vf, "-c:v", "h264_nvenc", "-preset", "p4", "-rc", "vbr", "-cq", "22",
+             "-pix_fmt", "yuv420p"],
+        ),
+        (
+            "amf",
+            [*gop, "-vf", vf, "-c:v", "h264_amf", "-quality", "balanced", "-rc", "cqp",
+             "-qp_i", "22", "-qp_p", "22", "-pix_fmt", "yuv420p"],
         ),
         (
             "x264",

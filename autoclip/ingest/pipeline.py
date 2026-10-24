@@ -15,6 +15,7 @@ from .dedupe import dedupe_segments, phash_from_frames
 from .frames import sample_frames
 from .probe import ProbeError, probe
 from .proxy import make_proxy, needs_proxy
+from .scan import VideoScan, scan_video
 from .scenes import detect_scenes, split_long_scenes
 from .tagging import HeuristicTagger, Tagger, TagResult, VisionLLMTagger
 from .thumbs import ThumbnailError, make_thumbnail
@@ -52,7 +53,8 @@ class IngestOptions:
     whisper_device: str = "auto"
     whisper_compute_type: str = "int8"
     whisper_language: str | None = "vi"
-    whisper_beam_size: int = 5
+    whisper_beam_size: int = 1
+    """1 = greedy: nhanh gấp đôi beam 5 trên CPU, chất lượng chép lời tiếng Việt tương đương."""
     whisper_vad_filter: bool = True
     whisper_strict: bool = False
     phash_threshold: int = 6
@@ -116,15 +118,17 @@ def _build_segments(
     transcripts: Sequence[str],
     tagger: Tagger,
     options: IngestOptions,
+    scan: VideoScan | None = None,
 ) -> list[SegmentInfo]:
     segments: list[SegmentInfo] = []
     for index, (start, end) in enumerate(bounds):
         transcript = transcripts[index] if index < len(transcripts) else ""
-        frames = (
-            sample_frames(path, start, end, options.frames_per_segment)
-            if options.frames_per_segment > 0
-            else []
-        )
+        if options.frames_per_segment <= 0:
+            frames = []
+        elif scan is not None:
+            frames = scan.frames(start, end, options.frames_per_segment)
+        else:
+            frames = sample_frames(path, start, end, options.frames_per_segment)
         phash = phash_from_frames(frames) if options.compute_phash else None
 
         thumb: Path | None = None
@@ -211,24 +215,48 @@ def ingest_folder(
                 info = small.model_copy(update={"sha1": info.sha1})
                 path = proxy
 
+            prefetch = getattr(speech, "prefetch", None)
+            if prefetch is not None:
+                prefetch(path)  # Whisper chạy song song với quét hình
+            scan: VideoScan | None = None
+            if scenes_fn is detect_scenes and opts.frames_per_segment > 0:
+                try:
+                    scan = scan_video(
+                        path,
+                        width=info.width,
+                        height=info.height,
+                        fps=info.fps,
+                        duration=info.duration,
+                        threshold=opts.scene_threshold,
+                        min_scene_sec=opts.min_scene_sec,
+                    )
+                except Exception:
+                    logger.exception("quét một lượt lỗi cho %s; dùng cách cũ", path)
             try:
-                bounds = scenes_fn(
-                    path,
-                    min_scene_sec=opts.min_scene_sec,
-                    threshold=opts.scene_threshold,
-                    duration=info.duration,
-                )
-            except Exception:
-                logger.exception("scene detection failed for %s; using whole clip", path)
-                bounds = [(0.0, float(info.duration))] if info.duration > 0 else []
+                if scan is not None:
+                    bounds = scan.bounds
+                else:
+                    try:
+                        bounds = scenes_fn(
+                            path,
+                            min_scene_sec=opts.min_scene_sec,
+                            threshold=opts.scene_threshold,
+                            duration=info.duration,
+                        )
+                    except Exception:
+                        logger.exception("scene detection failed for %s; using whole clip", path)
+                        bounds = [(0.0, float(info.duration))] if info.duration > 0 else []
 
-            bounds = split_long_scenes(bounds, opts.max_scene_sec)
-            transcripts = speech.transcripts_for(path, bounds)
-            if speech.last_error:
-                report.errors.append(
-                    IngestError(path=str(path), message=f"whisper: {speech.last_error}")
-                )
-            segments = _build_segments(path, info, bounds, transcripts, tagger, opts)
+                bounds = split_long_scenes(bounds, opts.max_scene_sec)
+                transcripts = speech.transcripts_for(path, bounds)
+                if speech.last_error:
+                    report.errors.append(
+                        IngestError(path=str(path), message=f"whisper: {speech.last_error}")
+                    )
+                segments = _build_segments(path, info, bounds, transcripts, tagger, opts, scan)
+            finally:
+                if scan is not None:
+                    scan.close()
             deduped = dedupe_segments(segments, opts.phash_threshold)
 
             saved_clip = repo.add_clip(info)
