@@ -6,7 +6,8 @@ import random
 
 from autoclip.contracts import RecipeSpec, RenderPlan, SegmentInfo, SlotSpec
 from autoclip.diversity import expand_slots, make_variant
-from autoclip.planner.base import PlanError, Pool, assemble, want_duration
+from autoclip.planner.base import HEADLINE_MAX_CHARS, PlanError, Pool, assemble, want_duration
+from autoclip.planner.vi_text import headline_candidates, vi_ratio
 
 
 def pick_segment(
@@ -27,6 +28,19 @@ def pick_segment(
 def _length(picks: list[tuple[SlotSpec, SegmentInfo, float]]) -> float:
     """Ước lượng thời lượng output (tốc độ ~1)."""
     return sum(min(want, seg.end - seg.start) for _, seg, want in picks)
+
+
+def rule_headline(segments: list[SegmentInfo], seed: int) -> str | None:
+    """Tiêu đề không cần AI: một vế câu trọn vẹn, sạch, vừa một dòng.
+
+    Không có thì bỏ trống: chữ cắt giữa câu hay Whisper đoán bừa trông rất lạ trên video.
+    """
+    options = [
+        o
+        for o in headline_candidates([s.transcript for s in segments])
+        if len(o) <= HEADLINE_MAX_CHARS
+    ]
+    return random.Random(f"headline:{seed}").choice(options[:3]) if options else None
 
 
 def first_words(text: str | None, n: int) -> str:
@@ -65,14 +79,16 @@ class RulePlanner:
 
     def plan(self, spec: RecipeSpec, pool: Pool, seed: int, exclude: set[int]) -> RenderPlan:
         picks = self.pick(spec, pool, seed, exclude)
-        hook_text = next((seg.transcript for _, seg, _ in picks if seg.transcript), None)
         return assemble(
             spec,
             picks,
             pool,
             make_variant(spec, seed),
             random.Random(f"assemble:{seed}"),
-            headline=first_words(hook_text, 5),
-            title=first_words(" ".join(s.transcript or "" for _, s, _ in picks), 25),
+            headline=rule_headline([seg for _, seg, _ in picks], seed),
+            title=first_words(
+                " ".join(s.transcript or "" for _, s, _ in picks if vi_ratio(s.transcript) >= 0.8),
+                25,
+            ),
             planner=self.name,
         )

@@ -17,6 +17,7 @@ from autoclip.contracts import (
     SlotSpec,
 )
 from autoclip.diversity import Variant
+from autoclip.planner.vi_text import vi_ratio
 
 MIN_ITEM_SEC = 0.8
 CAPTION_WORDS = 8
@@ -63,6 +64,10 @@ def cut(seg: SegmentInfo, want: float, rng: random.Random) -> tuple[float, float
     offset = 0.0 if seg.transcript else rng.uniform(0, seg_len - length)
     start = round(seg.start + offset, 3)
     return start, round(start + length, 3)
+
+
+# Phụ đề chỉ hiện khi ≥ 80% từ là âm tiết tiếng Việt (xem vi_text)
+CAPTION_MIN_VI = 0.8
 
 
 def _caption_chunks(
@@ -154,11 +159,13 @@ def assemble(
             )
         )
         out_len = (src_end - src_start) / speed
-        if want_captions and seg.transcript:
+        if want_captions and seg.transcript and vi_ratio(seg.transcript) >= CAPTION_MIN_VI:
             words = seg.transcript.split()
             share = (src_end - src_start) / (seg.end - seg.start)
             spoken = " ".join(words[: max(1, round(len(words) * share))])
             for t in _caption_chunks(spoken, cursor, cursor + out_len):
+                if vi_ratio(t.text) < CAPTION_MIN_VI:
+                    continue  # Whisper đoán bừa (tiếng nước ngoài/ồn) → thà không có phụ đề
                 t.pos = (0.5, caption_y(seg, variant.caption_y))
                 texts.append(t)
         cursor += out_len

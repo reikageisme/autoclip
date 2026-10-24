@@ -21,7 +21,8 @@ from autoclip.contracts import RecipeSpec, RenderPlan, SegmentInfo, SlotSpec
 from autoclip.diversity import Variant, make_variant
 from autoclip.llm import LLMClient, LLMError
 from autoclip.planner.base import Pool, assemble
-from autoclip.planner.rules import RulePlanner, first_words
+from autoclip.planner.rules import RulePlanner, rule_headline
+from autoclip.planner.vi_text import vi_ratio
 
 log = logging.getLogger(__name__)
 
@@ -49,7 +50,8 @@ Chỉ trả về JSON: {{"picks": [id, ...], "headline": "...", "title": "..."}}
 
 
 def _candidate_line(seg: SegmentInfo) -> str:
-    text = " ".join((seg.transcript or "").split())[:TEXT_CHARS] or "-"
+    text = seg.transcript if vi_ratio(seg.transcript) >= 0.6 else ""  # bỏ chữ Whisper đoán bừa
+    text = " ".join((text or "").split())[:TEXT_CHARS] or "-"
     tags = ",".join(seg.tags) or "-"
     return f"{seg.id} | {seg.end - seg.start:.1f}s | {tags} | {seg.hook_score:.2f} | {text}"
 
@@ -122,7 +124,7 @@ class LLMPlanner:
         )
 
         picks = base
-        headline = first_words(next((s.transcript for _, s, _ in base if s.transcript), None), 5)
+        headline = rule_headline([s for _, s, _ in base], seed)
         title = ""
         used = "rules(fallback)"
         try:

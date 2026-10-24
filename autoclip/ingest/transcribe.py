@@ -160,7 +160,8 @@ class Transcriber:
                 pieces.extend(
                     TranscriptSegment(float(w.start), float(w.end), normalize_text(w.word))
                     for w in words
-                    if normalize_text(w.word)
+                    # từ Whisper tự thấy không chắc (< 30%) thường là đoán bừa trên tiếng ồn
+                    if normalize_text(w.word) and getattr(w, "probability", 1.0) >= 0.3
                 )
             else:
                 pieces.append(
