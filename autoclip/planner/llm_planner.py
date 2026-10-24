@@ -124,7 +124,7 @@ class LLMPlanner:
         )
 
         picks = base
-        headline = rule_headline([s for _, s, _ in base], seed)
+        headline = rule_headline([s for _, s, _ in base], seed, pool.segments)
         title = ""
         used = "rules(fallback)"
         try:

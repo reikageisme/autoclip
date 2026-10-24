@@ -30,17 +30,25 @@ def _length(picks: list[tuple[SlotSpec, SegmentInfo, float]]) -> float:
     return sum(min(want, seg.end - seg.start) for _, seg, want in picks)
 
 
-def rule_headline(segments: list[SegmentInfo], seed: int) -> str | None:
+def rule_headline(
+    segments: list[SegmentInfo], seed: int, pool: list[SegmentInfo] | None = None
+) -> str | None:
     """Tiêu đề không cần AI: một vế câu trọn vẹn, sạch, vừa một dòng.
 
-    Không có thì bỏ trống: chữ cắt giữa câu hay Whisper đoán bừa trông rất lạ trên video.
+    Ưu tiên lời trong chính các cảnh đã chọn; không có thì lấy từ lời thoại khác trong
+    kho (vẫn là lời của khách). Vẫn không có thì bỏ trống: chữ cắt giữa câu hay Whisper
+    đoán bừa trông rất lạ trên video.
     """
-    options = [
-        o
-        for o in headline_candidates([s.transcript for s in segments])
-        if len(o) <= HEADLINE_MAX_CHARS
-    ]
-    return random.Random(f"headline:{seed}").choice(options[:3]) if options else None
+    rng = random.Random(f"headline:{seed}")
+    for source, top in ((segments, 3), (pool or [], None)):
+        options = [
+            o
+            for o in headline_candidates([s.transcript for s in source])
+            if len(o) <= HEADLINE_MAX_CHARS
+        ]
+        if options:
+            return rng.choice(options[:top])
+    return None
 
 
 def first_words(text: str | None, n: int) -> str:
@@ -85,7 +93,7 @@ class RulePlanner:
             pool,
             make_variant(spec, seed),
             random.Random(f"assemble:{seed}"),
-            headline=rule_headline([seg for _, seg, _ in picks], seed),
+            headline=rule_headline([seg for _, seg, _ in picks], seed, pool.segments),
             title=first_words(
                 " ".join(s.transcript or "" for _, s, _ in picks if vi_ratio(s.transcript) >= 0.8),
                 25,

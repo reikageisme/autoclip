@@ -19,6 +19,11 @@ _SYLLABLE = re.compile(
     r"(ch|nh|ng|[cmnpt])?$"
 )
 _STRIP = ".,!?;:…\"'“”‘’()[]-–—"
+# Câu không kết thúc bằng hư từ: "...mọi người sẽ", "...kìa rất" là câu bị cắt dở.
+_DANGLING = set(
+    "sẽ để là và của thì mà rất các những một cũng đã đang với cho nhưng hoặc khi nếu "  # noqa: SIM905
+    "vì bởi này nó được có không ở từ hay như theo lại ra vào".split()
+)
 
 
 def _base(word: str) -> str:
@@ -59,13 +64,18 @@ def clauses(text: str | None) -> list[list[str]]:
 
 
 def headline_candidates(texts: list[str | None], lo: int = 3, hi: int = 8) -> list[str]:
-    """Vế câu trọn vẹn làm được tiêu đề: bắt đầu bằng chữ hoa (đầu câu), 3–8 từ,
-    toàn âm tiết tiếng Việt, không lặp từ quá nửa. Cụm cắt giữa câu → bỏ."""
+    """Vế câu trọn vẹn làm được tiêu đề: bắt đầu bằng chữ hoa (đầu câu), kết thúc bằng
+    dấu câu và không phải hư từ, 3–8 từ, toàn âm tiết tiếng Việt, không lặp từ quá nửa.
+    Cụm cắt giữa câu (cuối đoạn cảnh, không có dấu câu) → bỏ."""
     seen: set[str] = set()
     out: list[str] = []
     for text in texts:
         for words in clauses(text):
             if not lo <= len(words) <= hi or not words[0][:1].isupper():
+                continue
+            if words[-1][-1] not in ".,!?;:…":
+                continue
+            if words[-1].strip(_STRIP).lower() in _DANGLING:
                 continue
             phrase = " ".join(words).strip(_STRIP)
             key = phrase.lower()

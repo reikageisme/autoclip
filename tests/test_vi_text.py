@@ -28,3 +28,12 @@ def test_headline_needs_whole_clean_clause() -> None:
         "Cái này cái này cái này.",  # lặp từ → bỏ
     ]
     assert headline_candidates(texts) == ["Hàng về rất nhiều mẫu mới"]
+
+
+def test_headline_rejects_clause_cut_mid_sentence() -> None:
+    # cuối đoạn cảnh, không dấu câu / kết thúc bằng hư từ → câu dở
+    assert headline_candidates(["Hàn rất là nhiều mọi người sẽ"]) == []
+    assert headline_candidates(["Mạng này kìa rất, đẹp lắm."]) == []
+    assert headline_candidates(["Công nhân cũng đón rất là vất vả,"]) == [
+        "Công nhân cũng đón rất là vất vả"
+    ]
