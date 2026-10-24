@@ -366,8 +366,11 @@ class BatchRunner:
                 ),
             )
             engine.dispose()
+            # clip đã có (bỏ qua) cũng là xong: không thì thanh tiến độ kẹt "0 / 4" khi nhập lại
             self.state.update(
-                done=report.clips_added, failed=len(report.errors), title=f"Nhập {folder.name}"
+                done=report.clips_added + report.clips_skipped,
+                failed=len(report.errors),
+                title=f"Nhập {folder.name}",
             )
             return (
                 f"Nhập {report.clips_added} clip mới ({report.segments_added} đoạn), "
