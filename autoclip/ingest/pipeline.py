@@ -204,6 +204,15 @@ def ingest_folder(
             if existing is not None:
                 report.clips_skipped += 1
                 logger.info("skipping already ingested clip %s", path)
+                # Kho cũ chưa lưu tên gốc của clip đã hạ proxy: nhập lại thư mục là có tên
+                set_source = getattr(repo, "set_source_path", None)
+                if (
+                    set_source is not None
+                    and existing.id is not None
+                    and not existing.source_path
+                    and Path(existing.path).resolve() != path.resolve()
+                ):
+                    set_source(existing.id, str(path))
                 continue
 
             if opts.proxy_dir is not None and needs_proxy(info.width, info.height):
@@ -212,7 +221,7 @@ def ingest_folder(
                 )
                 small = probe_fn(proxy)
                 # sha1 vẫn của file gốc: nhập lại file gốc thì nhận ra là đã có
-                info = small.model_copy(update={"sha1": info.sha1})
+                info = small.model_copy(update={"sha1": info.sha1, "source_path": str(path)})
                 path = proxy
 
             prefetch = getattr(speech, "prefetch", None)

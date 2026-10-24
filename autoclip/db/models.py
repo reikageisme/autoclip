@@ -29,6 +29,8 @@ class Clip(Base):
     fps: Mapped[float] = mapped_column(Float)
     has_audio: Mapped[bool] = mapped_column(Boolean)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    source_path: Mapped[str | None] = mapped_column(String)
+    """File gốc khi `path` là proxy 1080p; None = `path` chính là file gốc."""
 
     segments: Mapped[list[Segment]] = relationship(
         back_populates="clip", cascade="all, delete-orphan"

@@ -37,6 +37,8 @@ class ClipInfo(_Model):
     fps: float
     has_audio: bool
     created_at: datetime | None = None
+    source_path: str | None = None
+    """File gốc người dùng nhập khi `path` là bản proxy 1080p (tên hiện trong Kho clip)."""
 
 
 class SegmentInfo(_Model):

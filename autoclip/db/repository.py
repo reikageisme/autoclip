@@ -26,6 +26,7 @@ def _clip_info(row: Clip) -> ClipInfo:
         fps=row.fps,
         has_audio=row.has_audio,
         created_at=_as_utc(row.created_at),
+        source_path=row.source_path,
     )
 
 
@@ -62,6 +63,12 @@ class SqlClipRepository:
         with self._sessions() as s:
             row = s.get(Clip, clip_id)
             return _clip_info(row) if row else None
+
+    def set_source_path(self, clip_id: int, source_path: str) -> None:
+        with self._sessions.begin() as s:
+            row = s.get(Clip, clip_id)
+            if row is not None:
+                row.source_path = source_path
 
     def add_clip(self, clip: ClipInfo) -> ClipInfo:
         with self._sessions.begin() as s:

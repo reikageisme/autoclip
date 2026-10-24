@@ -674,7 +674,7 @@ def create_app(
         return [
             {
                 "id": c.id,
-                "name": Path(c.path).name,
+                "name": Path(c.source_path or c.path).name,
                 "path": c.path,
                 "duration": c.duration,
                 "size": f"{c.width}x{c.height}",

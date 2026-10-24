@@ -212,3 +212,33 @@ def test_large_source_is_ingested_from_a_1080p_proxy(tmp_path: Path) -> None:
     assert clip.sha1 == sha1_file(src)
     again = ingest_folder(folder, repo, options, scenes_fn=_fake_scenes)
     assert again.clips_skipped == 1
+
+
+def test_proxied_clip_keeps_original_name(tmp_path: Path, media_files, monkeypatch) -> None:
+    import autoclip.ingest.pipeline as pipeline
+
+    def fake_proxy(src, dest, width, height):
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(src, dest)
+        return dest
+
+    monkeypatch.setattr(pipeline, "needs_proxy", lambda w, h: True)
+    monkeypatch.setattr(pipeline, "make_proxy", fake_proxy)
+    folder = tmp_path / "clips"
+    folder.mkdir()
+    original = _copy(media_files["testsrc"], folder / "Kho hang 4K.mp4")
+    repo = InMemoryRepo()
+    options = _options(tmp_path, proxy_dir=tmp_path / "proxies")
+
+    ingest_folder(folder, repo, options, scenes_fn=_fake_scenes)
+    ((_, clip),) = repo.clips
+    assert Path(clip.path).parent == tmp_path / "proxies"
+    assert clip.source_path == str(original)
+
+    # kho cũ chưa có tên gốc → nhập lại thư mục thì điền vào
+    repo.clips[0] = (1, clip.model_copy(update={"source_path": None}))
+    filled: list[tuple[int, str]] = []
+    repo.set_source_path = lambda cid, p: filled.append((cid, p))  # type: ignore[attr-defined]
+    again = ingest_folder(folder, repo, options, scenes_fn=_fake_scenes)
+    assert again.clips_skipped == 1
+    assert filled == [(1, str(original))]
