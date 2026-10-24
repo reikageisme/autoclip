@@ -360,10 +360,15 @@ class BatchRunner:
                 folder,
                 SqlClipRepository(engine),
                 options,
-                progress=lambda i, n, p: self.state.update(done=i - 1, requested=n),
+                # Panel hiện "title": cho người dùng thấy clip đang làm (clip dài mất vài phút)
+                progress=lambda i, n, p: self.state.update(
+                    done=i - 1, requested=n, title=f"Nhập {folder.name} · clip {i}/{n}: {p.name}"
+                ),
             )
             engine.dispose()
-            self.state.update(done=report.clips_added, failed=len(report.errors))
+            self.state.update(
+                done=report.clips_added, failed=len(report.errors), title=f"Nhập {folder.name}"
+            )
             return (
                 f"Nhập {report.clips_added} clip mới ({report.segments_added} đoạn), "
                 f"bỏ qua {report.clips_skipped} clip đã có, {len(report.errors)} lỗi"
