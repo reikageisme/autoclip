@@ -48,7 +48,7 @@ autoclip/
 - Edit chỉ nằm trong RAM cho tới `project_save`. Thời gian tính bằng giây; vị trí keyframe là tỉ lệ 0–1 của clip; kích thước/offset là tỉ lệ khung hình.
 - Tool MCP chính: project_create/open/save/close, project_set_video, media_import, media_probe, clips_add_sequence, clip_add, clip_trim, clips_split, clip_transform, clip_speed, title_add, captions_add, keyframe_set, effects_list, effect_layer_add, template_list, template_instantiate, edit_apply (batch), export_start, export_wait, preview_frame, timeline_read.
 - Luôn gọi `tools/list` để lấy schema thật thay vì đoán tham số. Đọc `reicut/docs/MCP.md` và `reicut/src/README.md` khi cần.
-- Đường dẫn binary: đặt qua biến môi trường `CONCAT_BIN` (mặc định `D:\work\reicut\src\target\app\concat.exe`).
+- Đường dẫn binary: đặt qua biến môi trường `CONCAT_BIN` (mặc định `D:\work\reicut\src\target\quick\concat.exe`).
 
 ### Lưu ý về project CapCut
 - Draft nằm ở `%LOCALAPPDATA%\CapCut\User Data\Projects\com.lveditor.draft\<tên>\`; file chính `draft_content.json` (hoặc `draft_info.json`).

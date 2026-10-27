@@ -24,7 +24,7 @@ if FROZEN:
 else:
     INSTALL_DIR = _REPO_ROOT
     APP_HOME = _REPO_ROOT
-    DEFAULT_CONCAT_BIN = Path(r"D:\work\reicut\src\target\app\concat.exe")
+    DEFAULT_CONCAT_BIN = Path(r"D:\work\reicut\src\target\quick\concat.exe")
 
 ENV_FILE = APP_HOME / ".env"
 """Cài đặt người dùng (panel ghi vào đây). Bản đóng gói: %LOCALAPPDATA%\\AutoClip\\.env."""
